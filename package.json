@@ -1,0 +1,15 @@
+{
+  "name": "ai-political-commissar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first focus supervisor for Windows.",
+  "main": "src/main.js",
+  "scripts": {
+    "postinstall": "install-electron",
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "42.3.3"
+  }
+}

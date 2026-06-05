@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 政委</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL FOCUS SUPERVISOR</p>
+        <h1>AI 政委</h1>
+        <p class="subtitle">看住方向，不接管你的人生。</p>
+      </div>
+      <div id="statusBadge" class="badge">待命</div>
+    </header>
+
+    <section class="grid">
+      <form id="sessionForm" class="panel setup">
+        <h2>本轮任务</h2>
+        <label>必须推进什么
+          <input id="task" required value="完成当前最重要的工作" maxlength="120">
+        </label>
+        <div class="two">
+          <label>专注分钟
+            <input id="duration" type="number" min="5" max="240" value="25">
+          </label>
+          <label>AI 模型
+            <input id="model" value="gpt-5.4-mini">
+          </label>
+        </div>
+        <label>专注关键词
+          <textarea id="allowed" rows="3" placeholder="vscode, github, 文档, 项目名"></textarea>
+        </label>
+        <label>分心关键词
+          <textarea id="blocked" rows="3" placeholder="bilibili, douyin, steam, 小红书"></textarea>
+        </label>
+        <label class="toggle">
+          <input id="aiEnabled" type="checkbox">
+          <span>规则不确定时，用 AI 查看当前屏幕（最多每分钟一次）</span>
+        </label>
+        <p id="apiHint" class="hint"></p>
+        <div class="actions">
+          <button id="startButton" class="primary" type="submit">开始专注</button>
+          <button id="stopButton" class="danger" type="button">停止 / 紧急退出</button>
+        </div>
+        <p class="shortcut">任何时候按 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F12</kbd> 紧急暂停。</p>
+      </form>
+
+      <section class="panel live">
+        <div class="timer" id="timer">00:00</div>
+        <p id="currentTask" class="current-task">尚未开始</p>
+        <div class="signal">
+          <span id="verdictDot" class="dot unknown"></span>
+          <div>
+            <strong id="verdict">等待观察</strong>
+            <p id="reason">只在专注会话中读取前台窗口。</p>
+          </div>
+        </div>
+        <div id="checkinBox" class="checkin hidden">
+          <label>用一句话报到：接下来具体做什么？
+            <input id="checkinText" maxlength="100" placeholder="例如：写完登录接口的测试">
+          </label>
+          <button id="checkinButton" type="button">确认，回去做</button>
+        </div>
+        <h2>近期观察</h2>
+        <ol id="history" class="history"></ol>
+      </section>
+    </section>
+
+    <section class="privacy">
+      <strong>隐私边界：</strong>默认仅读取前台窗口标题和进程名。开启 AI 后，截图只在内存中发送给 OpenAI，
+      本地日志不保存截图。它只应监督你自己的电脑。
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
