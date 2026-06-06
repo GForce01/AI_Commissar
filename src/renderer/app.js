@@ -6,6 +6,9 @@ const elements = {
   allowed: document.querySelector("#allowed"),
   blocked: document.querySelector("#blocked"),
   aiEnabled: document.querySelector("#aiEnabled"),
+  voiceEnabled: document.querySelector("#voiceEnabled"),
+  ttsVoice: document.querySelector("#ttsVoice"),
+  previewVoice: document.querySelector("#previewVoiceButton"),
   apiHint: document.querySelector("#apiHint"),
   start: document.querySelector("#startButton"),
   stop: document.querySelector("#stopButton"),
@@ -76,11 +79,22 @@ elements.form.addEventListener("submit", async (event) => {
     aiModel: elements.model.value,
     allowedKeywords: elements.allowed.value,
     blockedKeywords: elements.blocked.value,
-    aiEnabled: elements.aiEnabled.checked
+    aiEnabled: elements.aiEnabled.checked,
+    voiceEnabled: elements.voiceEnabled.checked,
+    ttsVoice: elements.ttsVoice.value
   }));
 });
 
 elements.stop.addEventListener("click", async () => render(await window.commissar.stop()));
+elements.previewVoice.addEventListener("click", async () => {
+  elements.previewVoice.disabled = true;
+  elements.previewVoice.textContent = "正在发声...";
+  await window.commissar.previewVoice(elements.ttsVoice.value);
+  setTimeout(() => {
+    elements.previewVoice.disabled = false;
+    elements.previewVoice.textContent = "试听";
+  }, 2500);
+});
 elements.checkinButton.addEventListener("click", async () => {
   render(await window.commissar.checkIn(elements.checkinText.value));
   elements.checkinText.value = "";

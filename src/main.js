@@ -1,6 +1,7 @@
 const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Notification, screen } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { classifyActivity, nextIntervention } = require("./rules");
@@ -24,6 +25,14 @@ let state = {
 let sessionEndsAt = 0;
 let lastAiCheckAt = 0;
 let lastBlockAt = 0;
+let speechInFlight = false;
+
+const COMMISSAR_LINES = [
+  "同志，注意力已经脱离任务。停止无效游荡，立即回到你承诺要完成的事情上。",
+  "我必须提醒你：现在不是放任冲动的时候。收拢注意力，回到当前任务。",
+  "不要用短暂的轻松，交换之后更沉重的焦虑。关掉它，继续执行。",
+  "目标还在那里，时间正在经过。停止偏航，现在就完成下一步。"
+];
 
 function publicState() {
   return { ...state, apiKeyAvailable: Boolean(process.env.OPENAI_API_KEY) };
@@ -137,6 +146,69 @@ function notify(title, body) {
   if (Notification.isSupported()) new Notification({ title, body, silent: false }).show();
 }
 
+function playWav(filePath) {
+  const command = [
+    "Add-Type -AssemblyName System.Windows.Forms;",
+    `$player = New-Object System.Media.SoundPlayer('${filePath.replaceAll("'", "''")}');`,
+    "$player.PlaySync()"
+  ].join(" ");
+  return execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    { windowsHide: true, timeout: 60000 }
+  );
+}
+
+async function speakWithOpenAi(text, voice = "onyx") {
+  const cacheDir = path.join(app.getPath("userData"), "voice-cache");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const hash = crypto.createHash("sha256").update(`${voice}:${text}`).digest("hex").slice(0, 20);
+  const audioPath = path.join(cacheDir, `${hash}.wav`);
+
+  if (!fs.existsSync(audioPath)) {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice,
+        input: text,
+        instructions: "Speak in Mandarin Chinese with a deep, resonant adult male voice. Be righteous, stern, composed, and authoritative, like a disciplined political commissar. Do not shout. Use deliberate pacing and crisp articulation.",
+        response_format: "wav"
+      })
+    });
+    if (!response.ok) throw new Error(`OpenAI speech ${response.status}`);
+    fs.writeFileSync(audioPath, Buffer.from(await response.arrayBuffer()));
+  }
+
+  await playWav(audioPath);
+}
+
+async function speakCommissar(text) {
+  if (speechInFlight) return;
+  speechInFlight = true;
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      state.status = "语音提醒需要 OPENAI_API_KEY";
+      broadcast();
+      return;
+    }
+    await speakWithOpenAi(text, state.config?.ttsVoice || "onyx");
+  } catch (error) {
+    state.status = `OpenAI 语音暂不可用：${error.message}`;
+    broadcast();
+  } finally {
+    speechInFlight = false;
+  }
+}
+
+function randomCommissarLine() {
+  return COMMISSAR_LINES[Math.floor(Math.random() * COMMISSAR_LINES.length)];
+}
+
 function showBlocker() {
   if (blockerWindow || Date.now() - lastBlockAt < 60000) return;
   lastBlockAt = Date.now();
@@ -195,6 +267,7 @@ async function monitorTick() {
 
   if (state.intervention === "nudge" && state.consecutiveDistracted === 1) {
     notify("先回来一下", `你现在的任务是：${state.task}`);
+    if (state.config.voiceEnabled) void speakCommissar(randomCommissarLine());
   }
   if (state.intervention === "checkin" && state.consecutiveDistracted === 3) {
     notify("需要报到", "回到政委窗口，写下你接下来要做的一步。");
@@ -228,7 +301,7 @@ function createWindow() {
     minWidth: 820,
     minHeight: 640,
     backgroundColor: "#f4f1e8",
-    title: "AI 政委",
+    title: "AI Commissar",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -254,6 +327,8 @@ ipcMain.handle("session:start", (_, config) => {
       allowedKeywords: config.allowedKeywords || "",
       blockedKeywords: config.blockedKeywords || "",
       aiEnabled: Boolean(config.aiEnabled),
+      voiceEnabled: config.voiceEnabled !== false,
+      ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
       aiModel: config.aiModel || "gpt-5.4-mini"
     },
     status: "专注会话已开始",
@@ -268,6 +343,16 @@ ipcMain.handle("session:start", (_, config) => {
   return publicState();
 });
 ipcMain.handle("session:stop", () => stopSession("已手动停止"));
+ipcMain.handle("voice:preview", async (_, voice) => {
+  const selectedVoice = ["onyx", "echo", "ash"].includes(voice) ? voice : "onyx";
+  const previousVoice = state.config?.ttsVoice;
+  state.config = { ...(state.config || {}), ttsVoice: selectedVoice };
+  void speakCommissar("同志，AI Commissar 已就位。目标一经确定，就不要把时间交给无意义的冲动。")
+    .finally(() => {
+      if (previousVoice) state.config.ttsVoice = previousVoice;
+    });
+  return { ok: true };
+});
 ipcMain.handle("session:checkin", (_, text) => {
   const note = String(text || "").trim();
   if (note) {

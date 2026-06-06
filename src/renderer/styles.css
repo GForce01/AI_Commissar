@@ -18,8 +18,8 @@ p { margin: 0; }
 .grid { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(380px, 1.1fr); gap: 20px; }
 .panel { border: 1px solid #d4ccba; border-radius: 18px; padding: 24px; background: rgba(255,255,255,.74); box-shadow: 0 14px 35px rgba(52,43,25,.08); }
 label { display: block; color: #4f5962; font-size: 13px; font-weight: 650; margin-bottom: 14px; }
-input, textarea { display: block; width: 100%; margin-top: 7px; border: 1px solid #c8c0ae; border-radius: 9px; padding: 11px 12px; background: #fffefa; color: #17212b; font: inherit; resize: vertical; }
-input:focus, textarea:focus { outline: 2px solid #c36b47; border-color: transparent; }
+input, textarea, select { display: block; width: 100%; margin-top: 7px; border: 1px solid #c8c0ae; border-radius: 9px; padding: 11px 12px; background: #fffefa; color: #17212b; font: inherit; resize: vertical; }
+input:focus, textarea:focus, select:focus { outline: 2px solid #c36b47; border-color: transparent; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .toggle { display: flex; align-items: flex-start; gap: 9px; line-height: 1.45; }
 .toggle input { width: auto; margin: 3px 0 0; }
@@ -27,6 +27,9 @@ input:focus, textarea:focus { outline: 2px solid #c36b47; border-color: transpar
 .actions { display: flex; gap: 10px; margin-bottom: 12px; }
 button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 750; cursor: pointer; }
 .primary { background: #9e3f2d; color: white; }
+.secondary { color: #26333d; background: #e6dfd0; }
+.voice-row { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
+.voice-row button { margin-bottom: 14px; }
 .danger { color: #8e3025; background: #f2ddd6; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 kbd { border: 1px solid #bbb29f; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: #fff; }

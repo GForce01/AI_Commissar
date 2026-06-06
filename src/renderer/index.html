@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 政委</title>
+  <title>AI Commissar</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <header>
       <div>
         <p class="eyebrow">LOCAL FOCUS SUPERVISOR</p>
-        <h1>AI 政委</h1>
+        <h1>AI Commissar</h1>
         <p class="subtitle">看住方向，不接管你的人生。</p>
       </div>
       <div id="statusBadge" class="badge">待命</div>
@@ -41,6 +41,20 @@
           <input id="aiEnabled" type="checkbox">
           <span>规则不确定时，用 AI 查看当前屏幕（最多每分钟一次）</span>
         </label>
+        <label class="toggle">
+          <input id="voiceEnabled" type="checkbox" checked>
+          <span>分心时启用义正言辞的语音提醒</span>
+        </label>
+        <div class="voice-row">
+          <label>政委音色
+            <select id="ttsVoice">
+              <option value="onyx">Onyx · 浑厚威严</option>
+              <option value="echo">Echo · 冷静克制</option>
+              <option value="ash">Ash · 干练锐利</option>
+            </select>
+          </label>
+          <button id="previewVoiceButton" class="secondary" type="button">试听</button>
+        </div>
         <p id="apiHint" class="hint"></p>
         <div class="actions">
           <button id="startButton" class="primary" type="submit">开始专注</button>

@@ -1,8 +1,8 @@
 {
-  "name": "ai-political-commissar",
+  "name": "ai-commissar",
   "version": "0.1.0",
   "private": true,
-  "description": "A local-first focus supervisor for Windows.",
+  "description": "AI Commissar, a local-first focus supervisor for Windows.",
   "main": "src/main.js",
   "scripts": {
     "postinstall": "install-electron",
