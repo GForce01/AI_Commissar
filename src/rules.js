@@ -1,3 +1,5 @@
+const { detectGame } = require("./game-detector");
+
 function normalizeList(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
@@ -24,6 +26,17 @@ function classifyActivity(activity, config) {
   const allowedMatch = allowed.find((keyword) => haystack.includes(keyword));
   if (allowedMatch) {
     return { verdict: "focused", reason: `命中专注词：${allowedMatch}` };
+  }
+
+  if (config.autoDetectGames !== false) {
+    const game = detectGame(
+      activity,
+      config.installedGameRoots || [],
+      config.registeredGameExecutables || []
+    );
+    if (game.detected) {
+      return { verdict: "distracted", reason: `自动识别游戏：${game.reason}` };
+    }
   }
 
   if (!title && !processName) {

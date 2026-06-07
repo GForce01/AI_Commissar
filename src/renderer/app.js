@@ -5,13 +5,39 @@ const elements = {
   model: document.querySelector("#model"),
   allowed: document.querySelector("#allowed"),
   blocked: document.querySelector("#blocked"),
+  autoDetectGames: document.querySelector("#autoDetectGames"),
   aiEnabled: document.querySelector("#aiEnabled"),
+  ollamaEnabled: document.querySelector("#ollamaEnabled"),
+  ollamaTextModel: document.querySelector("#ollamaTextModel"),
+  ollamaVisionModel: document.querySelector("#ollamaVisionModel"),
+  ollamaFallback: document.querySelector("#ollamaFallback"),
+  ollamaStatus: document.querySelector("#ollamaStatus"),
   voiceEnabled: document.querySelector("#voiceEnabled"),
+  commentaryEnabled: document.querySelector("#commentaryEnabled"),
+  commentaryInterval: document.querySelector("#commentaryInterval"),
+  coldTurkeyEnabled: document.querySelector("#coldTurkeyEnabled"),
+  coldTurkeyBlockName: document.querySelector("#coldTurkeyBlockName"),
   ttsVoice: document.querySelector("#ttsVoice"),
   previewVoice: document.querySelector("#previewVoiceButton"),
+  personalityPrompt: document.querySelector("#personalityPrompt"),
+  savePersonality: document.querySelector("#savePersonalityButton"),
+  resetPersonality: document.querySelector("#resetPersonalityButton"),
   apiHint: document.querySelector("#apiHint"),
   start: document.querySelector("#startButton"),
   stop: document.querySelector("#stopButton"),
+  stopModal: document.querySelector("#stopModal"),
+  completionEvidence: document.querySelector("#completionEvidence"),
+  stopReviewMessage: document.querySelector("#stopReviewMessage"),
+  submitEvidence: document.querySelector("#submitEvidenceButton"),
+  cancelStop: document.querySelector("#cancelStopButton"),
+  forceStop: document.querySelector("#forceStopButton"),
+  rewardPoints: document.querySelector("#rewardPoints"),
+  rewardRank: document.querySelector("#rewardRank"),
+  completedSessions: document.querySelector("#completedSessions"),
+  punishmentStatus: document.querySelector("#punishmentStatus"),
+  coldTurkeyStatusText: document.querySelector("#coldTurkeyStatusText"),
+  coldTurkeyPassword: document.querySelector("#coldTurkeyPassword"),
+  recoverColdTurkey: document.querySelector("#recoverColdTurkeyButton"),
   timer: document.querySelector("#timer"),
   currentTask: document.querySelector("#currentTask"),
   badge: document.querySelector("#statusBadge"),
@@ -35,7 +61,8 @@ function verdictLabel(verdict) {
     focused: "在推进",
     distracted: "明显偏离",
     unknown: "暂不确定",
-    checkin: "已报到"
+    checkin: "已报到",
+    commentary: "战地点评"
   }[verdict] || "等待观察";
 }
 
@@ -45,10 +72,39 @@ function render(state) {
   elements.badge.textContent = state.running ? "监督中" : state.status;
   elements.start.disabled = state.running;
   elements.stop.disabled = !state.running;
+  if (!state.running) elements.stopModal.classList.add("hidden");
+  elements.rewardPoints.textContent = state.rewards?.points ?? 0;
+  elements.rewardRank.textContent = state.rewards?.rank || "列兵";
+  elements.completedSessions.textContent = state.rewards?.completedSessions || 0;
+  elements.coldTurkeyStatusText.textContent = state.coldTurkey?.status || "未启用";
+  const password = state.coldTurkey?.passwordRevealed || "";
+  elements.coldTurkeyPassword.textContent = password ? `解锁密码：${password}` : "";
+  elements.coldTurkeyPassword.classList.toggle("hidden", !password);
+  elements.recoverColdTurkey.classList.toggle("hidden", !state.coldTurkey?.recoveryAvailable);
+  elements.coldTurkeyEnabled.disabled = !state.coldTurkey?.available || !state.coldTurkey?.encryptionAvailable || state.running;
+  const punishmentSeconds = state.rewards?.punishmentRemainingSeconds || 0;
+  const inPunishment = state.rewards?.rank === "惩戒营";
+  elements.punishmentStatus.classList.toggle("hidden", !inPunishment);
+  elements.punishmentStatus.textContent = punishmentSeconds > 0
+    ? `惩戒营剩余 ${Math.ceil(punishmentSeconds / 3600)} 小时：${state.rewards.punishmentReason}`
+    : "惩戒营：完成专注任务，将积分恢复到 0 后归队。";
+  if (document.activeElement !== elements.personalityPrompt) {
+    elements.personalityPrompt.value = state.settings?.personalityPrompt || "";
+  }
   elements.apiHint.textContent = state.apiKeyAvailable
     ? "已检测到 OPENAI_API_KEY。AI 功能仍需手动勾选。"
-    : "未检测到 OPENAI_API_KEY，将只使用本地规则。";
-  elements.aiEnabled.disabled = !state.apiKeyAvailable || state.running;
+    : state.ollama?.available
+      ? "未检测到 OPENAI_API_KEY；可使用 Ollama，本地语音提醒不可用。"
+      : "未检测到 OPENAI_API_KEY，将只使用本地规则。";
+  const installedModels = (state.ollama?.models || []).map((model) => model.name);
+  elements.ollamaStatus.textContent = state.ollama?.available
+    ? `Ollama 在线。已安装：${installedModels.join(", ") || "暂无模型"}`
+    : `Ollama 离线：${state.ollama?.error || "无法连接本地服务"}`;
+  elements.ollamaEnabled.disabled = !state.ollama?.available || state.running;
+  elements.ollamaTextModel.disabled = state.running;
+  elements.ollamaVisionModel.disabled = state.running;
+  elements.ollamaFallback.disabled = state.running;
+  elements.aiEnabled.disabled = (!state.apiKeyAvailable && !state.ollama?.available) || state.running;
 
   const latest = state.latest;
   const verdict = latest?.verdict || "unknown";
@@ -79,21 +135,59 @@ elements.form.addEventListener("submit", async (event) => {
     aiModel: elements.model.value,
     allowedKeywords: elements.allowed.value,
     blockedKeywords: elements.blocked.value,
+    autoDetectGames: elements.autoDetectGames.checked,
     aiEnabled: elements.aiEnabled.checked,
+    ollamaEnabled: elements.ollamaEnabled.checked,
+    ollamaTextModel: elements.ollamaTextModel.value,
+    ollamaVisionModel: elements.ollamaVisionModel.value,
+    ollamaFallbackToOpenAi: elements.ollamaFallback.checked,
     voiceEnabled: elements.voiceEnabled.checked,
+    commentaryEnabled: elements.commentaryEnabled.checked,
+    commentaryIntervalMinutes: elements.commentaryInterval.value,
+    coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
+    coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
     ttsVoice: elements.ttsVoice.value
   }));
 });
 
-elements.stop.addEventListener("click", async () => render(await window.commissar.stop()));
+elements.stop.addEventListener("click", () => {
+  elements.stopReviewMessage.textContent = "";
+  elements.stopModal.classList.remove("hidden");
+  elements.completionEvidence.focus();
+});
+elements.cancelStop.addEventListener("click", () => elements.stopModal.classList.add("hidden"));
+elements.submitEvidence.addEventListener("click", async () => {
+  elements.submitEvidence.disabled = true;
+  elements.submitEvidence.textContent = "正在审查...";
+  const result = await window.commissar.requestStop(elements.completionEvidence.value);
+  render(result);
+  elements.stopReviewMessage.textContent = result.stopReview?.reason || "";
+  elements.submitEvidence.disabled = false;
+  elements.submitEvidence.textContent = "提交证据";
+  if (result.stopReview?.accepted) {
+    elements.stopModal.classList.add("hidden");
+    elements.completionEvidence.value = "";
+  }
+});
+elements.forceStop.addEventListener("click", async () => {
+  render(await window.commissar.forceStop());
+  elements.stopModal.classList.add("hidden");
+});
 elements.previewVoice.addEventListener("click", async () => {
   elements.previewVoice.disabled = true;
   elements.previewVoice.textContent = "正在发声...";
-  await window.commissar.previewVoice(elements.ttsVoice.value);
-  setTimeout(() => {
-    elements.previewVoice.disabled = false;
-    elements.previewVoice.textContent = "试听";
-  }, 2500);
+  render(await window.commissar.previewVoice(elements.ttsVoice.value));
+  elements.previewVoice.disabled = false;
+  elements.previewVoice.textContent = "试听";
+});
+elements.savePersonality.addEventListener("click", async () => {
+  render(await window.commissar.savePersonality(elements.personalityPrompt.value));
+});
+elements.resetPersonality.addEventListener("click", async () => {
+  render(await window.commissar.resetPersonality());
+});
+elements.recoverColdTurkey.addEventListener("click", async () => {
+  render(await window.commissar.recoverColdTurkey());
 });
 elements.checkinButton.addEventListener("click", async () => {
   render(await window.commissar.checkIn(elements.checkinText.value));
@@ -102,3 +196,4 @@ elements.checkinButton.addEventListener("click", async () => {
 
 window.commissar.onState(render);
 window.commissar.getState().then(render);
+setInterval(() => window.commissar.getState().then(render), 60000);

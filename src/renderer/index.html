@@ -38,13 +38,57 @@
           <textarea id="blocked" rows="3" placeholder="bilibili, douyin, steam, 小红书"></textarea>
         </label>
         <label class="toggle">
-          <input id="aiEnabled" type="checkbox">
-          <span>规则不确定时，用 AI 查看当前屏幕（最多每分钟一次）</span>
+          <input id="autoDetectGames" type="checkbox" checked>
+          <span>自动识别游戏平台和已安装游戏</span>
         </label>
+        <label class="toggle">
+          <input id="aiEnabled" type="checkbox" checked>
+          <span>规则不确定时，先用文字 AI 判断；拿不准再查看屏幕</span>
+        </label>
+        <details class="integration">
+          <summary>本地 Ollama 分流</summary>
+          <label class="toggle integration-toggle">
+            <input id="ollamaEnabled" type="checkbox">
+            <span>文字判断、证据审查和屏幕点评优先使用本地模型</span>
+          </label>
+          <div class="two">
+            <label>文字模型
+              <input id="ollamaTextModel" value="qwen3:8b">
+            </label>
+            <label>视觉模型
+              <input id="ollamaVisionModel" value="qwen3-vl:8b">
+            </label>
+          </div>
+          <label class="toggle">
+            <input id="ollamaFallback" type="checkbox" checked>
+            <span>本地模型不可用或调用失败时回退 OpenAI</span>
+          </label>
+          <p id="ollamaStatus" class="hint">正在检测 Ollama...</p>
+        </details>
         <label class="toggle">
           <input id="voiceEnabled" type="checkbox" checked>
           <span>分心时启用义正言辞的语音提醒</span>
         </label>
+        <div class="commentary-settings">
+          <label class="toggle">
+            <input id="commentaryEnabled" type="checkbox" checked>
+            <span>定时查看进度并发表战地点评</span>
+          </label>
+          <label>间隔分钟
+            <input id="commentaryInterval" type="number" min="3" max="60" value="10">
+          </label>
+        </div>
+        <details class="integration">
+          <summary>Cold Turkey 联动</summary>
+          <label class="toggle integration-toggle">
+            <input id="coldTurkeyEnabled" type="checkbox">
+            <span>开始专注时用随机密码锁定 Cold Turkey</span>
+          </label>
+          <label>Block 名称
+            <input id="coldTurkeyBlockName" value="AI Commissar" maxlength="80">
+          </label>
+          <p class="hint">需要 Cold Turkey Pro 的密码锁功能。密码只在任务完成或证据通过后显示。</p>
+        </details>
         <div class="voice-row">
           <label>政委音色
             <select id="ttsVoice">
@@ -55,15 +99,46 @@
           </label>
           <button id="previewVoiceButton" class="secondary" type="button">试听</button>
         </div>
+        <details class="personality">
+          <summary>人格 Prompt</summary>
+          <label>定义政委的措辞、态度与语音风格
+            <textarea id="personalityPrompt" rows="6" maxlength="2000"></textarea>
+          </label>
+          <div class="prompt-actions">
+            <button id="savePersonalityButton" class="secondary" type="button">保存人格</button>
+            <button id="resetPersonalityButton" class="quiet" type="button">恢复默认</button>
+          </div>
+        </details>
         <p id="apiHint" class="hint"></p>
         <div class="actions">
           <button id="startButton" class="primary" type="submit">开始专注</button>
-          <button id="stopButton" class="danger" type="button">停止 / 紧急退出</button>
+          <button id="stopButton" class="danger" type="button">申请结束</button>
         </div>
-        <p class="shortcut">任何时候按 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F12</kbd> 紧急暂停。</p>
+        <p class="shortcut">紧急情况下按 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F12</kbd> 强行停止；本轮扣 3 点。</p>
       </form>
 
       <section class="panel live">
+        <div class="rewards">
+          <div>
+            <span>荣誉点</span>
+            <strong id="rewardPoints">0</strong>
+          </div>
+          <div>
+            <span>当前军衔</span>
+            <strong id="rewardRank">列兵</strong>
+          </div>
+          <div>
+            <span>完成轮次</span>
+            <strong id="completedSessions">0</strong>
+          </div>
+        </div>
+        <p id="punishmentStatus" class="punishment hidden"></p>
+        <section id="coldTurkeyStatus" class="cold-turkey-status">
+          <span>Cold Turkey</span>
+          <strong id="coldTurkeyStatusText">未启用</strong>
+          <code id="coldTurkeyPassword" class="hidden"></code>
+          <button id="recoverColdTurkeyButton" class="quiet hidden" type="button">恢复上次密码（扣 3 点）</button>
+        </section>
         <div class="timer" id="timer">00:00</div>
         <p id="currentTask" class="current-task">尚未开始</p>
         <div class="signal">
@@ -89,6 +164,20 @@
       本地日志不保存截图。它只应监督你自己的电脑。
     </section>
   </main>
+  <div id="stopModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="stopModalTitle">
+    <section class="modal-card">
+      <p class="eyebrow">任务完成审查</p>
+      <h2 id="stopModalTitle">说服政委允许提前结束</h2>
+      <p class="modal-copy">说明具体交付物、保存位置，以及你如何确认它已经完成。</p>
+      <textarea id="completionEvidence" rows="6" maxlength="1500" placeholder="例如：已完成登录接口及 8 项测试，代码位于 src/auth，npm test 全部通过。"></textarea>
+      <p id="stopReviewMessage" class="review-message"></p>
+      <div class="modal-actions">
+        <button id="submitEvidenceButton" class="primary" type="button">提交证据</button>
+        <button id="cancelStopButton" class="secondary" type="button">继续执行</button>
+        <button id="forceStopButton" class="danger" type="button">强行停止并扣 3 点</button>
+      </div>
+    </section>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

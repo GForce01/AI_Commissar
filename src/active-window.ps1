@@ -19,5 +19,8 @@ $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
 [PSCustomObject]@{
   title = $builder.ToString()
   processName = if ($process) { $process.ProcessName } else { "" }
+  executablePath = if ($process) {
+    try { $process.MainModule.FileName } catch { "" }
+  } else { "" }
   pid = $processId
 } | ConvertTo-Json -Compress

@@ -23,6 +23,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid #c36b47; border-c
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .toggle { display: flex; align-items: flex-start; gap: 9px; line-height: 1.45; }
 .toggle input { width: auto; margin: 3px 0 0; }
+.commentary-settings { display: grid; grid-template-columns: 1fr 110px; align-items: start; gap: 10px; }
 .hint, .shortcut { color: #747b80; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
 .actions { display: flex; gap: 10px; margin-bottom: 12px; }
 button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 750; cursor: pointer; }
@@ -30,10 +31,27 @@ button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-
 .secondary { color: #26333d; background: #e6dfd0; }
 .voice-row { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
 .voice-row button { margin-bottom: 14px; }
+.personality { margin: 0 0 14px; border: 1px solid #d8d0bf; border-radius: 10px; padding: 10px 12px; background: #faf7ef; }
+.integration { margin: 0 0 14px; border: 1px solid #c9d2d8; border-radius: 10px; padding: 10px 12px; background: #f3f7f8; }
+.integration summary { cursor: pointer; color: #42535e; font-size: 13px; font-weight: 750; }
+.integration-toggle { margin-top: 12px; }
+.personality summary { cursor: pointer; color: #4f5962; font-size: 13px; font-weight: 750; }
+.personality label { margin-top: 12px; }
+.prompt-actions { display: flex; gap: 8px; }
+.quiet { color: #626a70; background: transparent; border: 1px solid #cec6b5; }
 .danger { color: #8e3025; background: #f2ddd6; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 kbd { border: 1px solid #bbb29f; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: #fff; }
 .timer { font-variant-numeric: tabular-nums; font-size: 64px; font-weight: 800; letter-spacing: -3px; }
+.rewards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+.rewards div { padding: 11px; border: 1px solid #ded6c5; border-radius: 10px; background: #f8f4ea; }
+.rewards span { display: block; color: #777d80; font-size: 11px; margin-bottom: 4px; }
+.rewards strong { font-size: 15px; color: #8f3b2c; }
+.punishment { margin: -8px 0 16px; padding: 9px 11px; color: #8b241c; background: #f8dfd8; border: 1px solid #dda99b; border-radius: 9px; font-size: 12px; }
+.cold-turkey-status { display: grid; gap: 5px; margin: -8px 0 16px; padding: 10px 11px; border: 1px solid #cbd5da; border-radius: 9px; background: #f1f5f6; }
+.cold-turkey-status span { color: #737d82; font-size: 11px; }
+.cold-turkey-status code { padding: 7px; border-radius: 6px; background: #17212b; color: #fff; overflow-wrap: anywhere; }
+.cold-turkey-status button { justify-self: start; }
 .current-task { color: #5b646b; font-size: 16px; margin-bottom: 24px; }
 .signal { display: flex; gap: 13px; align-items: flex-start; padding: 16px; border-radius: 12px; background: #eeeae0; margin-bottom: 22px; }
 .signal p { margin-top: 4px; color: #697178; font-size: 13px; }
@@ -47,7 +65,15 @@ kbd { border: 1px solid #bbb29f; border-bottom-width: 2px; border-radius: 4px; p
 .history li { display: grid; grid-template-columns: 70px 80px 1fr; gap: 9px; padding: 9px 0; border-bottom: 1px solid #e4ded0; font-size: 12px; }
 .history .focused { color: #237452; }
 .history .distracted { color: #a73329; }
+.history .commentary { color: #8f5f1d; }
 .privacy { margin-top: 18px; color: #6a706f; font-size: 12px; line-height: 1.6; }
+.modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgba(17,24,39,.62); backdrop-filter: blur(4px); }
+.modal.hidden { display: none; }
+.modal-card { width: min(620px, 100%); padding: 26px; border-radius: 16px; background: #fffaf0; box-shadow: 0 24px 70px rgba(0,0,0,.28); }
+.modal-card h2 { margin-top: 8px; }
+.modal-copy { margin-bottom: 14px; color: #626a70; font-size: 13px; line-height: 1.55; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.review-message { min-height: 20px; margin-top: 9px; color: #96372a; font-size: 13px; }
 @media (max-width: 880px) {
   main { padding: 24px; }
   .grid { grid-template-columns: 1fr; }
