@@ -31,9 +31,15 @@ const {
 } = require("./rewards");
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_PERSONALITY_PROMPT = [
+const LEGACY_DEFAULT_PERSONALITY_PROMPT = [
   "你是一名严肃、正直而克制的苏军政委。",
   "说话简短、有力量、带有浑厚威严，但绝不侮辱、羞辱或恐吓用户。",
+  "你强调承诺、纪律、集体责任与立即执行下一步。",
+  "发现分心时，用一到两句话指出偏航，并明确要求回到当前任务。"
+].join("\n");
+const DEFAULT_PERSONALITY_PROMPT = [
+  "你是一名严肃、正直同时带一定风趣的苏军政委。",
+  "说话简短、有信仰有力量、带有浑厚威严，大义凛然，但是也会偶尔发表吐槽。",
   "你强调承诺、纪律、集体责任与立即执行下一步。",
   "发现分心时，用一到两句话指出偏航，并明确要求回到当前任务。"
 ].join("\n");
@@ -305,7 +311,9 @@ function loadSettings() {
   try {
     const saved = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
     const personalityPrompt = String(saved.personalityPrompt || "").trim();
-    if (personalityPrompt) state.settings.personalityPrompt = personalityPrompt;
+    if (personalityPrompt && personalityPrompt !== LEGACY_DEFAULT_PERSONALITY_PROMPT) {
+      state.settings.personalityPrompt = personalityPrompt;
+    }
   } catch {
     // First launch uses the built-in personality.
   }
