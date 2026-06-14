@@ -67,6 +67,9 @@ kbd { border: 1px solid #bbb29f; border-bottom-width: 2px; border-radius: 4px; p
 .history .distracted { color: #a73329; }
 .history .commentary { color: #8f5f1d; }
 .privacy { margin-top: 18px; color: #6a706f; font-size: 12px; line-height: 1.6; }
+.temporary-feature { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 14px; padding: 14px 16px; border: 1px dashed #b8a77e; border-radius: 12px; background: rgba(255,255,255,.45); }
+.temporary-feature p { margin-top: 4px; color: #747b80; font-size: 12px; }
+.temporary-feature button { flex: 0 0 auto; }
 .daily-plan { margin-top: 20px; }
 .daily-plan-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .daily-plan-header h2 { margin-top: 5px; margin-bottom: 5px; }
@@ -115,4 +118,5 @@ kbd { border: 1px solid #bbb29f; border-bottom-width: 2px; border-radius: 4px; p
   .entertainment-actions { justify-content: flex-start; }
   .daily-plan-header, .daily-plan-actions, .daily-plan-items li { align-items: stretch; flex-direction: column; }
   .daily-reminder { justify-content: space-between; }
+  .temporary-feature { align-items: stretch; flex-direction: column; }
 }

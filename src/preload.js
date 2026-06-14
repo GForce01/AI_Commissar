@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("commissar", {
   getState: () => ipcRenderer.invoke("state:get"),
+  openWinterSupervision: () => ipcRenderer.invoke("external:winter-supervision:open"),
   start: (config) => ipcRenderer.invoke("session:start", config),
   startEntertainment: (config) => ipcRenderer.invoke("entertainment:start", config),
   stopEntertainment: () => ipcRenderer.invoke("entertainment:stop"),

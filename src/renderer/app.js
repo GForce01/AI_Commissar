@@ -82,7 +82,8 @@ const elements = {
   dailyPlanEvidence: document.querySelector("#dailyPlanEvidence"),
   dailyPlanReviewMessage: document.querySelector("#dailyPlanReviewMessage"),
   submitDailyPlanEvidence: document.querySelector("#submitDailyPlanEvidenceButton"),
-  cancelDailyPlanEvidence: document.querySelector("#cancelDailyPlanEvidenceButton")
+  cancelDailyPlanEvidence: document.querySelector("#cancelDailyPlanEvidenceButton"),
+  openWinterSupervision: document.querySelector("#openWinterSupervisionButton")
 };
 
 let preferencesHydrated = false;
@@ -545,6 +546,16 @@ elements.submitDailyPlanEvidence.addEventListener("click", async () => {
   elements.submitDailyPlanEvidence.textContent = "提交证据";
   if (result.dailyPlanReview?.accepted) {
     elements.dailyPlanEvidenceModal.classList.add("hidden");
+  }
+});
+elements.openWinterSupervision.addEventListener("click", async () => {
+  elements.openWinterSupervision.disabled = true;
+  elements.openWinterSupervision.textContent = "正在打开...";
+  try {
+    await window.commissar.openWinterSupervision();
+  } finally {
+    elements.openWinterSupervision.disabled = false;
+    elements.openWinterSupervision.textContent = "一键开启凛冬督学局";
   }
 });
 

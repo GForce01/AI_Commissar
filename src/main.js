@@ -7,7 +7,8 @@ const {
   ipcMain,
   Notification,
   safeStorage,
-  screen
+  screen,
+  shell
 } = require("electron");
 const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -1729,6 +1730,11 @@ function createWindow() {
 }
 
 ipcMain.handle("state:get", () => publicState());
+ipcMain.handle("external:winter-supervision:open", async () => {
+  const url = "https://redwatch.top/";
+  await shell.openExternal(url);
+  return { opened: true, url };
+});
 ipcMain.handle("session:start", async (_, config) => {
   if (state.entertainment.active) return publicState();
   if (state.entertainment.guard.active && config.coldTurkeyEnabled) {
