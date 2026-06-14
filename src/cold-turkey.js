@@ -19,9 +19,17 @@ function coldTurkeyAvailable(executablePath = DEFAULT_EXECUTABLE) {
   return fs.existsSync(executablePath);
 }
 
+function parseBlockStatus(output) {
+  const status = String(output || "").trim().toLowerCase();
+  if (status.includes("enabled")) return "enabled";
+  if (status.includes("disabled")) return "disabled";
+  return "unknown";
+}
+
 module.exports = {
   DEFAULT_EXECUTABLE,
   coldTurkeyAvailable,
   generateColdTurkeyPassword,
+  parseBlockStatus,
   validateBlockName
 };

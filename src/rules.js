@@ -1,5 +1,14 @@
 const { detectGame } = require("./game-detector");
 
+const KEYWORD_ALIASES = new Map([
+  ["微信", ["wechat", "weixin"]],
+  ["企业微信", ["wxwork", "wecom"]],
+  ["qq", ["qq", "tim"]],
+  ["钉钉", ["dingtalk"]],
+  ["抖音", ["douyin"]],
+  ["小红书", ["xiaohongshu", "rednote"]]
+]);
+
 function normalizeList(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
@@ -11,6 +20,16 @@ function normalizeList(value) {
     .filter(Boolean);
 }
 
+function keywordVariants(keyword) {
+  return [keyword, ...(KEYWORD_ALIASES.get(keyword) || [])];
+}
+
+function findKeywordMatch(keywords, haystack) {
+  return keywords.find((keyword) => (
+    keywordVariants(keyword).some((variant) => haystack.includes(variant))
+  ));
+}
+
 function classifyActivity(activity, config) {
   const title = String(activity?.title || "").toLowerCase();
   const processName = String(activity?.processName || "").toLowerCase();
@@ -18,12 +37,12 @@ function classifyActivity(activity, config) {
   const blocked = normalizeList(config.blockedKeywords);
   const allowed = normalizeList(config.allowedKeywords);
 
-  const blockedMatch = blocked.find((keyword) => haystack.includes(keyword));
+  const blockedMatch = findKeywordMatch(blocked, haystack);
   if (blockedMatch) {
     return { verdict: "distracted", reason: `命中分心词：${blockedMatch}` };
   }
 
-  const allowedMatch = allowed.find((keyword) => haystack.includes(keyword));
+  const allowedMatch = findKeywordMatch(allowed, haystack);
   if (allowedMatch) {
     return { verdict: "focused", reason: `命中专注词：${allowedMatch}` };
   }
@@ -53,4 +72,4 @@ function nextIntervention(consecutiveDistracted) {
   return "none";
 }
 
-module.exports = { classifyActivity, nextIntervention, normalizeList };
+module.exports = { classifyActivity, findKeywordMatch, nextIntervention, normalizeList };

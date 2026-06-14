@@ -7,6 +7,13 @@ const elements = {
   blocked: document.querySelector("#blocked"),
   autoDetectGames: document.querySelector("#autoDetectGames"),
   aiEnabled: document.querySelector("#aiEnabled"),
+  visionQuality: document.querySelector("#visionQuality"),
+  apiProviderName: document.querySelector("#apiProviderName"),
+  apiBaseUrl: document.querySelector("#apiBaseUrl"),
+  compatibleApiKey: document.querySelector("#compatibleApiKey"),
+  ttsModel: document.querySelector("#ttsModel"),
+  saveCompatibleApiKey: document.querySelector("#saveCompatibleApiKeyButton"),
+  clearCompatibleApiKey: document.querySelector("#clearCompatibleApiKeyButton"),
   ollamaEnabled: document.querySelector("#ollamaEnabled"),
   ollamaTextModel: document.querySelector("#ollamaTextModel"),
   ollamaVisionModel: document.querySelector("#ollamaVisionModel"),
@@ -18,6 +25,7 @@ const elements = {
   coldTurkeyEnabled: document.querySelector("#coldTurkeyEnabled"),
   coldTurkeyBlockName: document.querySelector("#coldTurkeyBlockName"),
   ttsVoice: document.querySelector("#ttsVoice"),
+  ttsSpeed: document.querySelector("#ttsSpeed"),
   previewVoice: document.querySelector("#previewVoiceButton"),
   personalityPrompt: document.querySelector("#personalityPrompt"),
   savePersonality: document.querySelector("#savePersonalityButton"),
@@ -25,6 +33,16 @@ const elements = {
   apiHint: document.querySelector("#apiHint"),
   start: document.querySelector("#startButton"),
   stop: document.querySelector("#stopButton"),
+  startEntertainment: document.querySelector("#startEntertainmentButton"),
+  stopEntertainment: document.querySelector("#stopEntertainmentButton"),
+  entertainmentCommentaryEnabled: document.querySelector("#entertainmentCommentaryEnabled"),
+  entertainmentInterval: document.querySelector("#entertainmentInterval"),
+  entertainmentDuration: document.querySelector("#entertainmentDuration"),
+  entertainmentDurationLabel: document.querySelector("#entertainmentDurationLabel"),
+  entertainmentCost: document.querySelector("#entertainmentCost"),
+  entertainmentAccessStatus: document.querySelector("#entertainmentAccessStatus"),
+  startEntertainmentGuard: document.querySelector("#startEntertainmentGuardButton"),
+  entertainmentGuardStatus: document.querySelector("#entertainmentGuardStatus"),
   stopModal: document.querySelector("#stopModal"),
   completionEvidence: document.querySelector("#completionEvidence"),
   stopReviewMessage: document.querySelector("#stopReviewMessage"),
@@ -36,7 +54,10 @@ const elements = {
   completedSessions: document.querySelector("#completedSessions"),
   punishmentStatus: document.querySelector("#punishmentStatus"),
   coldTurkeyStatusText: document.querySelector("#coldTurkeyStatusText"),
+  penaltyLockStatus: document.querySelector("#penaltyLockStatus"),
   coldTurkeyPassword: document.querySelector("#coldTurkeyPassword"),
+  revealPreviousColdTurkeyPassword: document.querySelector("#revealPreviousColdTurkeyPasswordButton"),
+  confirmColdTurkeyUnlocked: document.querySelector("#confirmColdTurkeyUnlockedButton"),
   recoverColdTurkey: document.querySelector("#recoverColdTurkeyButton"),
   timer: document.querySelector("#timer"),
   currentTask: document.querySelector("#currentTask"),
@@ -44,11 +65,99 @@ const elements = {
   dot: document.querySelector("#verdictDot"),
   verdict: document.querySelector("#verdict"),
   reason: document.querySelector("#reason"),
+  aiUsage: document.querySelector("#aiUsage"),
   history: document.querySelector("#history"),
   checkinBox: document.querySelector("#checkinBox"),
   checkinText: document.querySelector("#checkinText"),
-  checkinButton: document.querySelector("#checkinButton")
+  checkinButton: document.querySelector("#checkinButton"),
+  dailyPlanStatus: document.querySelector("#dailyPlanStatus"),
+  dailyPlanReminderEnabled: document.querySelector("#dailyPlanReminderEnabled"),
+  dailyPlanReminderTime: document.querySelector("#dailyPlanReminderTime"),
+  dailyPlanInput: document.querySelector("#dailyPlanInput"),
+  generateDailyPlan: document.querySelector("#generateDailyPlanButton"),
+  dailyPlanItems: document.querySelector("#dailyPlanItems"),
+  dailyPlanEvidenceModal: document.querySelector("#dailyPlanEvidenceModal"),
+  dailyPlanEvidenceTitle: document.querySelector("#dailyPlanEvidenceTitle"),
+  dailyPlanEvidenceTask: document.querySelector("#dailyPlanEvidenceTask"),
+  dailyPlanEvidence: document.querySelector("#dailyPlanEvidence"),
+  dailyPlanReviewMessage: document.querySelector("#dailyPlanReviewMessage"),
+  submitDailyPlanEvidence: document.querySelector("#submitDailyPlanEvidenceButton"),
+  cancelDailyPlanEvidence: document.querySelector("#cancelDailyPlanEvidenceButton")
 };
+
+let preferencesHydrated = false;
+let preferencesSaveTimer;
+let selectedDailyPlanItemId = "";
+
+function collectPreferences() {
+  return {
+    task: elements.task.value,
+    durationMinutes: elements.duration.value,
+    aiModel: elements.model.value,
+    apiProviderName: elements.apiProviderName.value,
+    apiBaseUrl: elements.apiBaseUrl.value,
+    ttsModel: elements.ttsModel.value,
+    allowedKeywords: elements.allowed.value,
+    blockedKeywords: elements.blocked.value,
+    autoDetectGames: elements.autoDetectGames.checked,
+    aiEnabled: elements.aiEnabled.checked,
+    visionQuality: elements.visionQuality.value,
+    ollamaEnabled: elements.ollamaEnabled.checked,
+    ollamaTextModel: elements.ollamaTextModel.value,
+    ollamaVisionModel: elements.ollamaVisionModel.value,
+    ollamaFallbackToOpenAi: elements.ollamaFallback.checked,
+    voiceEnabled: elements.voiceEnabled.checked,
+    commentaryEnabled: elements.commentaryEnabled.checked,
+    commentaryIntervalMinutes: elements.commentaryInterval.value,
+    coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
+    coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
+    ttsVoice: elements.ttsVoice.value,
+    ttsSpeed: elements.ttsSpeed.value,
+    entertainmentCommentaryEnabled: elements.entertainmentCommentaryEnabled.checked,
+    entertainmentIntervalSeconds: elements.entertainmentInterval.value,
+    entertainmentDurationMinutes: elements.entertainmentDuration.value,
+    dailyPlanReminderEnabled: elements.dailyPlanReminderEnabled.checked,
+    dailyPlanReminderTime: elements.dailyPlanReminderTime.value
+  };
+}
+
+function hydratePreferences(preferences = {}) {
+  elements.task.value = preferences.task ?? elements.task.value;
+  elements.duration.value = preferences.durationMinutes ?? elements.duration.value;
+  elements.model.value = preferences.aiModel ?? elements.model.value;
+  elements.apiProviderName.value = preferences.apiProviderName || "OpenAI";
+  elements.apiBaseUrl.value = preferences.apiBaseUrl || "https://api.openai.com/v1";
+  elements.ttsModel.value = preferences.ttsModel || "gpt-4o-mini-tts";
+  elements.allowed.value = preferences.allowedKeywords ?? "";
+  elements.blocked.value = preferences.blockedKeywords ?? "";
+  elements.autoDetectGames.checked = preferences.autoDetectGames !== false;
+  elements.aiEnabled.checked = preferences.aiEnabled !== false;
+  elements.visionQuality.value = preferences.visionQuality || "high";
+  elements.ollamaEnabled.checked = Boolean(preferences.ollamaEnabled);
+  elements.ollamaTextModel.value = preferences.ollamaTextModel || "qwen3:8b";
+  elements.ollamaVisionModel.value = preferences.ollamaVisionModel || "qwen3-vl:8b";
+  elements.ollamaFallback.checked = preferences.ollamaFallbackToOpenAi !== false;
+  elements.voiceEnabled.checked = preferences.voiceEnabled !== false;
+  elements.commentaryEnabled.checked = preferences.commentaryEnabled !== false;
+  elements.commentaryInterval.value = preferences.commentaryIntervalMinutes ?? 10;
+  elements.coldTurkeyEnabled.checked = Boolean(preferences.coldTurkeyEnabled);
+  elements.coldTurkeyBlockName.value = preferences.coldTurkeyBlockName || "AI Commissar";
+  elements.ttsVoice.value = preferences.ttsVoice || "onyx";
+  elements.ttsSpeed.value = preferences.ttsSpeed ?? 1.1;
+  elements.entertainmentCommentaryEnabled.checked = preferences.entertainmentCommentaryEnabled !== false;
+  elements.entertainmentInterval.value = preferences.entertainmentIntervalSeconds ?? 60;
+  elements.entertainmentDuration.value = preferences.entertainmentDurationMinutes ?? 30;
+  elements.dailyPlanReminderEnabled.checked = Boolean(preferences.dailyPlanReminderEnabled);
+  elements.dailyPlanReminderTime.value = preferences.dailyPlanReminderTime || "09:00";
+}
+
+function schedulePreferencesSave() {
+  if (!preferencesHydrated) return;
+  clearTimeout(preferencesSaveTimer);
+  preferencesSaveTimer = setTimeout(() => {
+    void window.commissar.savePreferences(collectPreferences());
+  }, 350);
+}
 
 function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -62,56 +171,191 @@ function verdictLabel(verdict) {
     distracted: "明显偏离",
     unknown: "暂不确定",
     checkin: "已报到",
-    commentary: "战地点评"
+    commentary: "战地点评",
+    entertainment: "娱乐点评"
   }[verdict] || "等待观察";
 }
 
 function render(state) {
-  elements.timer.textContent = formatTime(state.remainingSeconds || 0);
-  elements.currentTask.textContent = state.running ? state.task : "尚未开始";
-  elements.badge.textContent = state.running ? "监督中" : state.status;
-  elements.start.disabled = state.running;
+  if (!preferencesHydrated) {
+    hydratePreferences(state.settings?.preferences);
+    preferencesHydrated = true;
+  }
+  const entertainmentActive = Boolean(state.entertainment?.active);
+  const guardActive = Boolean(state.entertainment?.guard?.active);
+  const entertainmentMinutes = Math.max(5, Math.min(240, Number(elements.entertainmentDuration.value) || 30));
+  const entertainmentCost = Math.ceil(entertainmentMinutes / 5);
+  const access = state.entertainmentAccess || {};
+  const exceedsDailyTime = access.remainingMinutes !== null
+    && access.remainingMinutes !== undefined
+    && entertainmentMinutes > access.remainingMinutes;
+  elements.entertainmentDuration.max = access.remainingMinutes === null
+    ? 240
+    : Math.max(5, Math.min(240, access.remainingMinutes || 5));
+  elements.timer.textContent = formatTime(
+    entertainmentActive && state.entertainment.paid
+      ? state.entertainment.remainingSeconds || 0
+      : entertainmentActive
+        ? state.entertainment.elapsedSeconds || 0
+        : state.remainingSeconds || 0
+  );
+  elements.currentTask.textContent = state.running
+    ? state.task
+    : entertainmentActive
+      ? state.entertainment.commentaryEnabled
+        ? `津贴娱乐中 · 每 ${state.entertainment.intervalSeconds || 60} 秒观察 · 已记住 ${state.entertainment.memoryTurns || 0} 轮`
+        : "津贴娱乐中 · AI 点评已关闭"
+      : "尚未开始";
+  elements.badge.textContent = state.running ? "监督中" : entertainmentActive ? "娱乐中" : state.status;
+  elements.start.disabled = state.running || entertainmentActive
+    || (elements.coldTurkeyEnabled.checked && state.coldTurkey?.awaitingUnlockConfirmation);
   elements.stop.disabled = !state.running;
+  elements.startEntertainment.disabled = state.running || entertainmentActive
+    || (elements.entertainmentCommentaryEnabled.checked && !state.apiKeyAvailable)
+    || (state.rewards?.points || 0) < entertainmentCost
+    || Boolean(access.blockedByPenalty)
+    || !access.focusRequirementMet
+    || exceedsDailyTime;
+  elements.stopEntertainment.disabled = !entertainmentActive;
+  elements.entertainmentCommentaryEnabled.disabled = entertainmentActive;
+  elements.entertainmentInterval.disabled = entertainmentActive;
+  elements.entertainmentDuration.disabled = entertainmentActive;
+  elements.entertainmentCost.textContent = `需要 ${entertainmentCost} 点`;
+  elements.startEntertainment.textContent = `使用津贴开启（${entertainmentCost} 点）`;
+  const limitLabel = access.dailyLimitMinutes === null
+    ? "周末津贴不限时"
+    : `今日津贴 ${access.dailyLimitMinutes} 分钟，余额 ${access.remainingMinutes ?? 0} 分钟`;
+  const focusLabel = access.workday
+    ? `工作日专注 ${access.focusedMinutes || 0}/180 分钟`
+    : "周末无需专注门槛";
+  elements.entertainmentAccessStatus.textContent = [
+    "津贴兑换比例：1 荣誉点 = 5 分钟",
+    focusLabel,
+    limitLabel,
+    access.blockedByPenalty ? "惩戒营禁止娱乐" : `当前军衔：${access.rank || "列兵"}`
+  ].join(" · ");
+  elements.startEntertainmentGuard.disabled = guardActive || state.running || entertainmentActive
+    || Boolean(access.blockedByPenalty)
+    || !state.coldTurkey?.available || !state.coldTurkey?.encryptionAvailable;
+  const guardRemaining = state.entertainment?.guard?.remainingSeconds || 0;
+  elements.entertainmentGuardStatus.textContent = guardActive
+    ? `限制中，剩余 ${Math.floor(guardRemaining / 3600)} 小时 ${Math.ceil((guardRemaining % 3600) / 60)} 分钟`
+    : "未开启限制";
   if (!state.running) elements.stopModal.classList.add("hidden");
   elements.rewardPoints.textContent = state.rewards?.points ?? 0;
   elements.rewardRank.textContent = state.rewards?.rank || "列兵";
   elements.completedSessions.textContent = state.rewards?.completedSessions || 0;
-  elements.coldTurkeyStatusText.textContent = state.coldTurkey?.status || "未启用";
+  const focusEndsAt = state.coldTurkey?.focusEndsAt || 0;
+  const focusTime = focusEndsAt > Date.now()
+    ? ` · 应用将在 ${new Date(focusEndsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 公布密码`
+    : "";
+  elements.coldTurkeyStatusText.textContent = `${state.coldTurkey?.status || "未启用"}${focusTime}`;
+  elements.penaltyLockStatus.textContent = `惩戒营 Games 锁：${state.coldTurkey?.penaltyStatus || "未启用"}`;
   const password = state.coldTurkey?.passwordRevealed || "";
   elements.coldTurkeyPassword.textContent = password ? `解锁密码：${password}` : "";
   elements.coldTurkeyPassword.classList.toggle("hidden", !password);
+  elements.confirmColdTurkeyUnlocked.classList.toggle(
+    "hidden",
+    !state.coldTurkey?.awaitingUnlockConfirmation
+  );
+  elements.revealPreviousColdTurkeyPassword.classList.toggle(
+    "hidden",
+    !state.coldTurkey?.previousPasswordAvailable
+  );
   elements.recoverColdTurkey.classList.toggle("hidden", !state.coldTurkey?.recoveryAvailable);
-  elements.coldTurkeyEnabled.disabled = !state.coldTurkey?.available || !state.coldTurkey?.encryptionAvailable || state.running;
+  elements.coldTurkeyEnabled.disabled = !state.coldTurkey?.available
+    || !state.coldTurkey?.encryptionAvailable || state.running || entertainmentActive || guardActive;
+  elements.coldTurkeyBlockName.disabled = state.running || entertainmentActive || guardActive;
   const punishmentSeconds = state.rewards?.punishmentRemainingSeconds || 0;
   const inPunishment = state.rewards?.rank === "惩戒营";
   elements.punishmentStatus.classList.toggle("hidden", !inPunishment);
   elements.punishmentStatus.textContent = punishmentSeconds > 0
-    ? `惩戒营剩余 ${Math.ceil(punishmentSeconds / 3600)} 小时：${state.rewards.punishmentReason}`
-    : "惩戒营：完成专注任务，将积分恢复到 0 后归队。";
+    ? `惩戒营剩余 ${Math.ceil(punishmentSeconds / 3600)} 小时，当前 ${state.rewards.points} 点：${state.rewards.punishmentReason}`
+    : `惩戒营：当前 ${state.rewards.points} 点，完成专注任务并恢复到 0 后归队。`;
   if (document.activeElement !== elements.personalityPrompt) {
     elements.personalityPrompt.value = state.settings?.personalityPrompt || "";
   }
   elements.apiHint.textContent = state.apiKeyAvailable
-    ? "已检测到 OPENAI_API_KEY。AI 功能仍需手动勾选。"
+    ? `已配置 ${state.apiProvider || "兼容 API"}。AI 功能仍需手动勾选。`
     : state.ollama?.available
-      ? "未检测到 OPENAI_API_KEY；可使用 Ollama，本地语音提醒不可用。"
-      : "未检测到 OPENAI_API_KEY，将只使用本地规则。";
+      ? "未配置兼容 API Key；可使用 Ollama，AI 语音不可用。"
+      : "未配置兼容 API Key，将只使用本地规则。";
+  elements.compatibleApiKey.placeholder = state.apiKeyAvailable
+    ? "API Key 已加密保存；输入新 Key 可替换"
+    : "输入 API Key，保存后不会再显示";
   const installedModels = (state.ollama?.models || []).map((model) => model.name);
   elements.ollamaStatus.textContent = state.ollama?.available
     ? `Ollama 在线。已安装：${installedModels.join(", ") || "暂无模型"}`
     : `Ollama 离线：${state.ollama?.error || "无法连接本地服务"}`;
-  elements.ollamaEnabled.disabled = !state.ollama?.available || state.running;
-  elements.ollamaTextModel.disabled = state.running;
-  elements.ollamaVisionModel.disabled = state.running;
-  elements.ollamaFallback.disabled = state.running;
-  elements.aiEnabled.disabled = (!state.apiKeyAvailable && !state.ollama?.available) || state.running;
+  elements.ollamaEnabled.disabled = !state.ollama?.available || state.running || entertainmentActive;
+  elements.ollamaTextModel.disabled = state.running || entertainmentActive;
+  elements.ollamaVisionModel.disabled = state.running || entertainmentActive;
+  elements.ollamaFallback.disabled = state.running || entertainmentActive;
+  elements.model.disabled = state.running || entertainmentActive;
+  elements.apiProviderName.disabled = state.running || entertainmentActive;
+  elements.apiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.ttsModel.disabled = state.running || entertainmentActive;
+  elements.visionQuality.disabled = state.running || entertainmentActive;
+  elements.aiEnabled.disabled = (!state.apiKeyAvailable && !state.ollama?.available) || state.running || entertainmentActive;
 
   const latest = state.latest;
   const verdict = latest?.verdict || "unknown";
   elements.dot.className = `dot ${verdict}`;
   elements.verdict.textContent = verdictLabel(verdict);
   elements.reason.textContent = latest?.reason || state.status || "只在专注会话中读取前台窗口。";
+  const contentUsage = state.aiUsage?.content;
+  const speechUsage = state.aiUsage?.speech;
+  const contentLabel = contentUsage
+    ? `${contentUsage.modality === "vision" ? "视觉" : "文字"}：${contentUsage.provider} ${contentUsage.model}${contentUsage.fallback ? "（由 Ollama 回退）" : ""}`
+    : null;
+  const speechLabel = speechUsage
+    ? `语音：${speechUsage.provider} ${speechUsage.model}`
+    : null;
+  elements.aiUsage.textContent = `AI 来源：${[contentLabel, speechLabel].filter(Boolean).join("；") || "尚未调用模型"}`;
   elements.checkinBox.classList.toggle("hidden", state.intervention !== "checkin");
+
+  const dailyPlan = state.dailyPlan || {};
+  elements.dailyPlanStatus.textContent = `${dailyPlan.date || "今日"} · ${dailyPlan.status || "尚未生成计划"}`;
+  elements.generateDailyPlan.disabled = (dailyPlan.items || []).length >= 12;
+  elements.generateDailyPlan.textContent = dailyPlan.generatedAt ? "AI 追加新目标" : "AI 生成今日计划";
+  if (
+    !dailyPlan.generatedAt
+    && document.activeElement !== elements.dailyPlanInput
+    && !elements.dailyPlanInput.value
+    && dailyPlan.sourceTasks
+  ) {
+    elements.dailyPlanInput.value = dailyPlan.sourceTasks;
+  }
+  elements.dailyPlanItems.replaceChildren(...(dailyPlan.items || []).map((item) => {
+    const li = document.createElement("li");
+    li.className = item.completed ? "completed" : "";
+    const content = document.createElement("div");
+    const title = document.createElement("strong");
+    const details = document.createElement("p");
+    const time = document.createElement("small");
+    const action = document.createElement("button");
+    title.textContent = item.title;
+    details.textContent = item.details || "按计划完成并提交可核验证据。";
+    time.textContent = item.completed
+      ? `已于 ${new Date(item.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 完成`
+      : item.suggestedTime || "今日完成";
+    action.type = "button";
+    action.className = item.completed ? "quiet" : "secondary";
+    action.textContent = item.completed ? "已奖励 +1" : "提交完成证据";
+    action.disabled = item.completed;
+    action.addEventListener("click", () => {
+      selectedDailyPlanItemId = item.id;
+      elements.dailyPlanEvidenceTitle.textContent = item.title;
+      elements.dailyPlanEvidenceTask.textContent = item.details || "请提交具体、可核验的完成证据。";
+      elements.dailyPlanEvidence.value = "";
+      elements.dailyPlanReviewMessage.textContent = "";
+      elements.dailyPlanEvidenceModal.classList.remove("hidden");
+      elements.dailyPlanEvidence.focus();
+    });
+    content.append(title, details, time);
+    li.append(content, action);
+    return li;
+  }));
 
   elements.history.replaceChildren(...(state.history || []).map((item) => {
     const li = document.createElement("li");
@@ -129,6 +373,8 @@ function render(state) {
 
 elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearTimeout(preferencesSaveTimer);
+  await window.commissar.savePreferences(collectPreferences());
   render(await window.commissar.start({
     task: elements.task.value,
     durationMinutes: elements.duration.value,
@@ -137,6 +383,7 @@ elements.form.addEventListener("submit", async (event) => {
     blockedKeywords: elements.blocked.value,
     autoDetectGames: elements.autoDetectGames.checked,
     aiEnabled: elements.aiEnabled.checked,
+    visionQuality: elements.visionQuality.value,
     ollamaEnabled: elements.ollamaEnabled.checked,
     ollamaTextModel: elements.ollamaTextModel.value,
     ollamaVisionModel: elements.ollamaVisionModel.value,
@@ -146,8 +393,70 @@ elements.form.addEventListener("submit", async (event) => {
     commentaryIntervalMinutes: elements.commentaryInterval.value,
     coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
     coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
-    ttsVoice: elements.ttsVoice.value
+    ttsVoice: elements.ttsVoice.value,
+    ttsSpeed: elements.ttsSpeed.value
   }));
+});
+
+elements.startEntertainment.addEventListener("click", async () => {
+  clearTimeout(preferencesSaveTimer);
+  await window.commissar.savePreferences(collectPreferences());
+  render(await window.commissar.startEntertainment({
+    aiModel: elements.model.value,
+    visionQuality: elements.visionQuality.value,
+    ollamaEnabled: elements.ollamaEnabled.checked,
+    ollamaVisionModel: elements.ollamaVisionModel.value,
+    ollamaFallbackToOpenAi: elements.ollamaFallback.checked,
+    ttsVoice: elements.ttsVoice.value,
+    ttsSpeed: elements.ttsSpeed.value,
+    commentaryEnabled: elements.entertainmentCommentaryEnabled.checked,
+    intervalSeconds: elements.entertainmentInterval.value,
+    durationMinutes: elements.entertainmentDuration.value
+  }));
+});
+elements.stopEntertainment.addEventListener("click", async () => {
+  render(await window.commissar.stopEntertainment());
+});
+elements.startEntertainmentGuard.addEventListener("click", async () => {
+  clearTimeout(preferencesSaveTimer);
+  await window.commissar.savePreferences(collectPreferences());
+  render(await window.commissar.startEntertainmentGuard(elements.coldTurkeyBlockName.value));
+});
+elements.entertainmentDuration.addEventListener("input", () => {
+  window.commissar.getState().then(render);
+});
+
+[
+  elements.task,
+  elements.duration,
+  elements.model,
+  elements.apiProviderName,
+  elements.apiBaseUrl,
+  elements.ttsModel,
+  elements.allowed,
+  elements.blocked,
+  elements.autoDetectGames,
+  elements.aiEnabled,
+  elements.visionQuality,
+  elements.ollamaEnabled,
+  elements.ollamaTextModel,
+  elements.ollamaVisionModel,
+  elements.ollamaFallback,
+  elements.voiceEnabled,
+  elements.commentaryEnabled,
+  elements.commentaryInterval,
+  elements.coldTurkeyEnabled,
+  elements.coldTurkeyBlockName,
+  elements.ttsVoice,
+  elements.ttsSpeed,
+  elements.entertainmentCommentaryEnabled,
+  elements.entertainmentInterval,
+  elements.entertainmentDuration,
+  elements.dailyPlanReminderEnabled,
+  elements.dailyPlanReminderTime
+].forEach((element) => {
+  element.addEventListener("input", schedulePreferencesSave);
+  element.addEventListener("change", schedulePreferencesSave);
 });
 
 elements.stop.addEventListener("click", () => {
@@ -176,7 +485,10 @@ elements.forceStop.addEventListener("click", async () => {
 elements.previewVoice.addEventListener("click", async () => {
   elements.previewVoice.disabled = true;
   elements.previewVoice.textContent = "正在发声...";
-  render(await window.commissar.previewVoice(elements.ttsVoice.value));
+  render(await window.commissar.previewVoice({
+    voice: elements.ttsVoice.value,
+    speed: elements.ttsSpeed.value
+  }));
   elements.previewVoice.disabled = false;
   elements.previewVoice.textContent = "试听";
 });
@@ -189,9 +501,51 @@ elements.resetPersonality.addEventListener("click", async () => {
 elements.recoverColdTurkey.addEventListener("click", async () => {
   render(await window.commissar.recoverColdTurkey());
 });
+elements.saveCompatibleApiKey.addEventListener("click", async () => {
+  if (!elements.compatibleApiKey.value.trim()) return;
+  clearTimeout(preferencesSaveTimer);
+  await window.commissar.savePreferences(collectPreferences());
+  render(await window.commissar.saveCompatibleApiKey(elements.compatibleApiKey.value));
+  elements.compatibleApiKey.value = "";
+});
+elements.clearCompatibleApiKey.addEventListener("click", async () => {
+  render(await window.commissar.saveCompatibleApiKey(""));
+  elements.compatibleApiKey.value = "";
+});
+elements.confirmColdTurkeyUnlocked.addEventListener("click", async () => {
+  render(await window.commissar.confirmColdTurkeyUnlocked());
+});
+elements.revealPreviousColdTurkeyPassword.addEventListener("click", async () => {
+  render(await window.commissar.revealPreviousColdTurkeyPassword());
+});
 elements.checkinButton.addEventListener("click", async () => {
   render(await window.commissar.checkIn(elements.checkinText.value));
   elements.checkinText.value = "";
+});
+elements.generateDailyPlan.addEventListener("click", async () => {
+  elements.generateDailyPlan.disabled = true;
+  elements.generateDailyPlan.textContent = "正在制定...";
+  const result = await window.commissar.generateDailyPlan(elements.dailyPlanInput.value);
+  render(result);
+  if (!result.dailyPlanError) elements.dailyPlanInput.value = "";
+});
+elements.cancelDailyPlanEvidence.addEventListener("click", () => {
+  elements.dailyPlanEvidenceModal.classList.add("hidden");
+});
+elements.submitDailyPlanEvidence.addEventListener("click", async () => {
+  elements.submitDailyPlanEvidence.disabled = true;
+  elements.submitDailyPlanEvidence.textContent = "正在审核...";
+  const result = await window.commissar.completeDailyPlanItem(
+    selectedDailyPlanItemId,
+    elements.dailyPlanEvidence.value
+  );
+  render(result);
+  elements.dailyPlanReviewMessage.textContent = result.dailyPlanReview?.reason || "";
+  elements.submitDailyPlanEvidence.disabled = false;
+  elements.submitDailyPlanEvidence.textContent = "提交证据";
+  if (result.dailyPlanReview?.accepted) {
+    elements.dailyPlanEvidenceModal.classList.add("hidden");
+  }
 });
 
 window.commissar.onState(render);

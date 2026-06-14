@@ -24,7 +24,7 @@ const RAPID_PENALTY_COUNT = 5;
 const PENAL_BATTALION_MS = 24 * 60 * 60 * 1000;
 
 function calculateReward(durationMinutes) {
-  return Math.max(1, Math.round(Number(durationMinutes || 0) / 5));
+  return Math.max(0, Math.floor(Number(durationMinutes || 0) / 5));
 }
 
 function rankForPoints(points) {
@@ -33,7 +33,7 @@ function rankForPoints(points) {
 }
 
 function normalizeRewards(saved = {}, now = Date.now()) {
-  const points = Math.max(-1, Number(saved.points || 0));
+  const points = Number(saved.points || 0);
   const punishmentUntil = Math.max(0, Number(saved.punishmentUntil || 0));
   const deductionEvents = Array.isArray(saved.deductionEvents)
     ? saved.deductionEvents.map(Number).filter((time) => Number.isFinite(time) && now - time <= RAPID_PENALTY_WINDOW_MS)
@@ -59,7 +59,7 @@ function displayRank(points, punishmentUntil = 0, now = Date.now()) {
 function applyDistractionPenalty(profile, now = Date.now()) {
   const current = normalizeRewards(profile, now);
   const rankBeforePenalty = rankForPoints(current.points);
-  const points = Math.max(-1, current.points - 1);
+  const points = current.points - 1;
   const deductionEvents = [...current.deductionEvents, now]
     .filter((time) => now - time <= RAPID_PENALTY_WINDOW_MS);
 
@@ -106,6 +106,38 @@ function awardSession(profile, durationMinutes, now = Date.now()) {
   }, now);
 }
 
+function awardDailyPlanItem(profile, now = Date.now()) {
+  const current = normalizeRewards(profile, now);
+  const points = current.points + 1;
+  const recoveredFromPrivatePenalty = current.points < 0 && points >= 0 && current.punishmentUntil <= now;
+  return normalizeRewards({
+    ...current,
+    points,
+    lastEarned: 1,
+    lastDeducted: 0,
+    punishmentReason: recoveredFromPrivatePenalty ? "" : current.punishmentReason
+  }, now);
+}
+
+function entertainmentCost(durationMinutes) {
+  const minutes = Math.max(5, Math.min(240, Number(durationMinutes) || 5));
+  return Math.ceil(minutes / 5);
+}
+
+function redeemEntertainment(profile, durationMinutes, now = Date.now()) {
+  const current = normalizeRewards(profile, now);
+  const cost = entertainmentCost(durationMinutes);
+  if (current.points < cost) {
+    throw new Error(`积分不足：需要 ${cost} 点，当前 ${current.points} 点`);
+  }
+  return normalizeRewards({
+    ...current,
+    points: current.points - cost,
+    lastEarned: 0,
+    lastDeducted: 0
+  }, now);
+}
+
 module.exports = {
   PENAL_BATTALION_MS,
   RAPID_PENALTY_COUNT,
@@ -113,9 +145,12 @@ module.exports = {
   RANKS,
   applyDistractionPenalty,
   applyForcedExitPenalty,
+  awardDailyPlanItem,
   awardSession,
   calculateReward,
   displayRank,
+  entertainmentCost,
   normalizeRewards,
-  rankForPoints
+  rankForPoints,
+  redeemEntertainment
 };

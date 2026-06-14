@@ -9,7 +9,7 @@ const {
   safeStorage,
   screen
 } = require("electron");
-const { execFile } = require("node:child_process");
+const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
@@ -20,14 +20,49 @@ const {
   DEFAULT_EXECUTABLE: COLD_TURKEY_EXECUTABLE,
   coldTurkeyAvailable,
   generateColdTurkeyPassword,
+  parseBlockStatus,
   validateBlockName
 } = require("./cold-turkey");
 const { getOllamaStatus, hasModel, ollamaChat } = require("./ollama");
 const {
+  alternateTokenParameter,
+  completionTokenBody,
+  compatibleEndpoint,
+  extractChatCompletionText,
+  normalizeApiBaseUrl
+} = require("./openai-compatible");
+const {
+  MAX_PASSWORD_VAULT_ENTRIES,
+  rotatePasswordVaultEntries
+} = require("./password-vault");
+const {
+  appendPlanItems,
+  emptyDailyPlan,
+  localDateKey,
+  normalizeDailyPlan,
+  normalizePlanItems
+} = require("./daily-plan");
+const { normalizePreferences } = require("./settings");
+const {
+  MAX_ENTERTAINMENT_MEMORY_TURNS,
+  buildEntertainmentPrompt,
+  normalizeTtsSpeed,
+  normalizeVisionQuality,
+  normalizeEntertainmentConfig
+} = require("./entertainment");
+const {
+  emptyEntertainmentLedger,
+  entertainmentAccess,
+  normalizeEntertainmentLedger
+} = require("./entertainment-ledger");
+const {
   applyDistractionPenalty,
   applyForcedExitPenalty,
+  awardDailyPlanItem,
   awardSession,
-  normalizeRewards
+  entertainmentCost,
+  normalizeRewards,
+  redeemEntertainment
 } = require("./rewards");
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +82,10 @@ const DEFAULT_PERSONALITY_PROMPT = [
 let mainWindow;
 let blockerWindow;
 let monitorTimer;
+let entertainmentTimer;
+let entertainmentGuardTimer;
+let penaltyLockTimer;
+let dailyPlanTimer;
 let state = {
   running: false,
   task: "",
@@ -57,6 +96,29 @@ let state = {
   history: [],
   config: null,
   status: "待命",
+  aiUsage: {
+    content: null,
+    speech: null
+  },
+  entertainment: {
+    active: false,
+    startedAt: 0,
+    elapsedSeconds: 0,
+    endsAt: 0,
+    remainingSeconds: 0,
+    paid: false,
+    costPoints: 0,
+    commentaryEnabled: true,
+    intervalSeconds: 60,
+    memoryTurns: 0,
+    guard: {
+      active: false,
+      endsAt: 0,
+      remainingSeconds: 0,
+      blockName: "AI Commissar"
+    }
+  },
+  entertainmentLedger: emptyEntertainmentLedger(),
   rewards: {
     points: 0,
     completedSessions: 0,
@@ -68,15 +130,23 @@ let state = {
     punishmentReason: ""
   },
   settings: {
-    personalityPrompt: DEFAULT_PERSONALITY_PROMPT
+    personalityPrompt: DEFAULT_PERSONALITY_PROMPT,
+    preferences: normalizePreferences()
   },
+  dailyPlan: emptyDailyPlan(),
   coldTurkey: {
     available: false,
     active: false,
     blockName: "AI Commissar",
     passwordRevealed: "",
     recoveryAvailable: false,
-    status: "未启用"
+    awaitingUnlockConfirmation: false,
+    previousPasswordAvailable: false,
+    status: "未启用",
+    focusEndsAt: 0,
+    penaltyActive: false,
+    penaltyStatus: "未启用",
+    penaltyLastCheckedAt: 0
   },
   ollama: {
     available: false,
@@ -91,12 +161,20 @@ let lastTextAiCheckAt = 0;
 let lastVisionAiCheckAt = 0;
 let lastProgressCommentaryAt = 0;
 let progressCommentaryInFlight = false;
+let entertainmentCommentaryInFlight = false;
+let lastEntertainmentCommentaryAt = 0;
+let entertainmentSession = null;
+let entertainmentStopping = false;
+let penaltyLockReconcileInFlight = false;
+let previousFocusPasswordCandidate = "";
 let lastBlockAt = 0;
-let speechInFlight = false;
+let speechQueue = Promise.resolve();
 let installedGameRoots = [];
 let registeredGameExecutables = [];
 let allowWindowClose = false;
 let closePromptOpen = false;
+let lastDailyPlanReminderDate = "";
+let compatibleApiKey = "";
 const textClassificationCache = new Map();
 const TEXT_CACHE_MS = 30 * 60 * 1000;
 const TEXT_CHECK_INTERVAL_MS = 10 * 1000;
@@ -110,6 +188,8 @@ const COMMISSAR_LINES = [
 ];
 
 function publicState() {
+  ensureDailyPlanCurrent();
+  ensureEntertainmentLedgerCurrent();
   const rewards = normalizeRewards(state.rewards);
   state.rewards = rewards;
   return {
@@ -122,7 +202,9 @@ function publicState() {
       ...rewards,
       punishmentRemainingSeconds: Math.max(0, Math.ceil((rewards.punishmentUntil - Date.now()) / 1000))
     },
-    apiKeyAvailable: Boolean(process.env.OPENAI_API_KEY)
+    entertainmentAccess: entertainmentAccess(rewards, state.entertainmentLedger),
+    apiKeyAvailable: Boolean(getCompatibleApiKey()),
+    apiProvider: getCompatibleApiConfig().providerName
   };
 }
 
@@ -132,8 +214,9 @@ function broadcast() {
   }
 }
 
-function addHistory(item) {
+function addHistory(item, { persist = true } = {}) {
   state.history = [item, ...state.history].slice(0, 80);
+  if (!persist) return;
   try {
     fs.appendFileSync(
       path.join(app.getPath("userData"), "activity.jsonl"),
@@ -153,34 +236,153 @@ function settingsPath() {
   return path.join(app.getPath("userData"), "settings.json");
 }
 
-function coldTurkeySessionPath() {
-  return path.join(app.getPath("userData"), "cold-turkey-session.json");
+function dailyPlanPath() {
+  return path.join(app.getPath("userData"), "daily-plan.json");
 }
 
-function saveColdTurkeySecret(password, blockName) {
+function entertainmentLedgerPath() {
+  return path.join(app.getPath("userData"), "entertainment-ledger.json");
+}
+
+function compatibleApiKeyPath() {
+  return path.join(app.getPath("userData"), "compatible-api-key.dat");
+}
+
+function entertainmentGuardPath() {
+  return path.join(app.getPath("userData"), "entertainment-guard.json");
+}
+
+function coldTurkeySessionPath(purpose = "focus") {
+  const suffix = purpose === "focus" ? "" : `-${purpose}`;
+  return path.join(app.getPath("userData"), `cold-turkey-session${suffix}.json`);
+}
+
+function passwordVaultDirectory() {
+  return path.join(app.getPath("userData"), ".system-cache");
+}
+
+function passwordVaultPath() {
+  return path.join(passwordVaultDirectory(), "recovery.dat");
+}
+
+function ensurePasswordVaultDirectory() {
+  const directory = passwordVaultDirectory();
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(directory, 0o700);
+  } catch {
+    // Windows ACLs are applied below.
+  }
+  if (process.platform === "win32") {
+    try {
+      execFileSync("attrib.exe", ["+h", directory], { windowsHide: true });
+      execFileSync(
+        "icacls.exe",
+        [directory, "/grant:r", `${process.env.USERNAME}:(OI)(CI)F`],
+        { windowsHide: true }
+      );
+      execFileSync("icacls.exe", [directory, "/inheritance:r"], { windowsHide: true });
+    } catch {
+      // Encryption remains the primary protection if ACL hardening is unavailable.
+    }
+  }
+}
+
+function archiveColdTurkeyPassword(password, blockName, purpose) {
+  ensurePasswordVaultDirectory();
+  let entries = [];
+  try {
+    const payload = JSON.parse(fs.readFileSync(passwordVaultPath(), "utf8"));
+    if (Array.isArray(payload.entries)) entries = payload.entries;
+  } catch {
+    // First write or a damaged archive starts a fresh encrypted history.
+  }
+  const nextEntries = rotatePasswordVaultEntries(entries, {
+    blockName,
+    purpose,
+    encryptedPassword: safeStorage.encryptString(password).toString("base64"),
+    createdAt: Date.now(),
+    revealedAt: 0
+  });
+  fs.writeFileSync(
+    passwordVaultPath(),
+    JSON.stringify({
+      version: 1,
+      maxEntries: MAX_PASSWORD_VAULT_ENTRIES,
+      entries: nextEntries
+    }),
+    { encoding: "utf8", mode: 0o600 }
+  );
+  try {
+    fs.chmodSync(passwordVaultPath(), 0o600);
+  } catch {
+    // The containing directory ACL still limits access on Windows.
+  }
+}
+
+function findPreviousColdTurkeyPassword(blockName, purpose, currentPassword) {
+  try {
+    const payload = JSON.parse(fs.readFileSync(passwordVaultPath(), "utf8"));
+    const candidates = (payload.entries || [])
+      .filter((entry) => entry.blockName === blockName && entry.purpose === purpose)
+      .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+    for (const entry of candidates) {
+      const password = safeStorage.decryptString(Buffer.from(entry.encryptedPassword, "base64"));
+      if (password !== currentPassword) return password;
+    }
+  } catch {
+    // No usable previous password candidate.
+  }
+  return "";
+}
+
+function findOrphanedFocusPasswordCandidate() {
+  try {
+    const payload = JSON.parse(fs.readFileSync(passwordVaultPath(), "utf8"));
+    const candidates = (payload.entries || [])
+      .filter((entry) => entry.purpose === "focus")
+      .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+      .map((entry) => safeStorage.decryptString(Buffer.from(entry.encryptedPassword, "base64")));
+    return candidates[1] || candidates[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveColdTurkeySecret(password, blockName, purpose = "focus") {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Windows 安全存储不可用，不能安全保存 Cold Turkey 密码");
   }
   const payload = {
     version: 1,
     blockName,
+    purpose,
     encryptedPassword: safeStorage.encryptString(password).toString("base64"),
     createdAt: Date.now()
   };
-  fs.writeFileSync(coldTurkeySessionPath(), JSON.stringify(payload, null, 2), "utf8");
+  fs.writeFileSync(coldTurkeySessionPath(purpose), JSON.stringify(payload, null, 2), "utf8");
 }
 
-function readColdTurkeySecret() {
-  const payload = JSON.parse(fs.readFileSync(coldTurkeySessionPath(), "utf8"));
+function readColdTurkeySecret(purpose = "focus") {
+  const payload = JSON.parse(fs.readFileSync(coldTurkeySessionPath(purpose), "utf8"));
   return {
     blockName: validateBlockName(payload.blockName),
-    password: safeStorage.decryptString(Buffer.from(payload.encryptedPassword, "base64"))
+    purpose: ["guard", "penalty"].includes(payload.purpose) ? payload.purpose : "focus",
+    password: safeStorage.decryptString(Buffer.from(payload.encryptedPassword, "base64")),
+    revealedAt: Math.max(0, Number(payload.revealedAt || 0))
   };
 }
 
-function clearColdTurkeySecret() {
+function markColdTurkeySecretRevealed(purpose = "focus") {
+  const filePath = coldTurkeySessionPath(purpose);
+  const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  payload.revealedAt = Date.now();
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+}
+
+function clearColdTurkeySecret(purpose = "focus") {
   try {
-    fs.unlinkSync(coldTurkeySessionPath());
+    fs.unlinkSync(coldTurkeySessionPath(purpose));
   } catch {
     // No active recovery secret.
   }
@@ -188,23 +390,79 @@ function clearColdTurkeySecret() {
 
 function loadColdTurkeyRecovery() {
   state.coldTurkey.available = coldTurkeyAvailable();
-  state.coldTurkey.recoveryAvailable = fs.existsSync(coldTurkeySessionPath());
-  if (state.coldTurkey.recoveryAvailable) {
+  if (fs.existsSync(coldTurkeySessionPath("focus"))) {
     try {
-      state.coldTurkey.blockName = readColdTurkeySecret().blockName;
-      state.coldTurkey.status = "检测到上次未完成的 Cold Turkey 锁";
+      const legacyPayload = JSON.parse(fs.readFileSync(coldTurkeySessionPath("focus"), "utf8"));
+      if (["guard", "penalty"].includes(legacyPayload.purpose)
+        && !fs.existsSync(coldTurkeySessionPath(legacyPayload.purpose))) {
+        fs.renameSync(
+          coldTurkeySessionPath("focus"),
+          coldTurkeySessionPath(legacyPayload.purpose)
+        );
+      }
+    } catch {
+      // Leave damaged legacy recovery data in place for the existing recovery flow.
+    }
+  }
+  let focusSecret = null;
+  try {
+    if (fs.existsSync(coldTurkeySessionPath("focus"))) {
+      focusSecret = readColdTurkeySecret("focus");
+    }
+  } catch {
+    // The status below will report damaged recovery data.
+  }
+  state.coldTurkey.awaitingUnlockConfirmation = Boolean(focusSecret?.revealedAt);
+  state.coldTurkey.recoveryAvailable = Boolean(
+    (focusSecret && !focusSecret.revealedAt)
+    || fs.existsSync(coldTurkeySessionPath("guard"))
+  );
+  state.coldTurkey.penaltyActive = fs.existsSync(coldTurkeySessionPath("penalty"));
+  state.coldTurkey.penaltyStatus = state.coldTurkey.penaltyActive
+    ? "惩戒营 Games 锁已启用"
+    : "未启用";
+  if (!focusSecret) {
+    previousFocusPasswordCandidate = findOrphanedFocusPasswordCandidate();
+    state.coldTurkey.previousPasswordAvailable = Boolean(previousFocusPasswordCandidate);
+  }
+  if (state.coldTurkey.recoveryAvailable || state.coldTurkey.awaitingUnlockConfirmation) {
+    try {
+      const purpose = fs.existsSync(coldTurkeySessionPath("guard")) ? "guard" : "focus";
+      const secret = readColdTurkeySecret(purpose);
+      state.coldTurkey.blockName = secret.blockName;
+      state.coldTurkey.status = secret.purpose === "guard"
+        ? "检测到 24 小时娱乐限制锁"
+        : secret.revealedAt
+          ? "上次密码已公布，等待确认 Cold Turkey 已解除"
+          : "检测到上次未完成的 Cold Turkey 锁";
+      if (secret.revealedAt) state.coldTurkey.passwordRevealed = secret.password;
+      if (secret.revealedAt) {
+        previousFocusPasswordCandidate = findPreviousColdTurkeyPassword(
+          secret.blockName,
+          "focus",
+          secret.password
+        );
+        state.coldTurkey.previousPasswordAvailable = Boolean(previousFocusPasswordCandidate);
+      }
     } catch {
       state.coldTurkey.status = "Cold Turkey 恢复信息损坏";
     }
   }
 }
 
-async function startColdTurkeyPasswordLock(blockName) {
+async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
   if (!coldTurkeyAvailable()) throw new Error("未找到 Cold Turkey Blocker");
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows 安全存储不可用");
+  if (fs.existsSync(coldTurkeySessionPath(purpose))) {
+    throw new Error(
+      purpose === "focus"
+        ? "上一轮 Cold Turkey 密码尚未确认解除"
+        : `已有 ${purpose} 类型的 Cold Turkey 锁记录`
+    );
+  }
   const name = validateBlockName(blockName);
   const password = generateColdTurkeyPassword();
-  saveColdTurkeySecret(password, name);
+  saveColdTurkeySecret(password, name, purpose);
 
   try {
     await execFileAsync(
@@ -213,34 +471,152 @@ async function startColdTurkeyPasswordLock(blockName) {
       { windowsHide: true, timeout: 15000 }
     );
   } catch (error) {
-    clearColdTurkeySecret();
+    clearColdTurkeySecret(purpose);
     throw new Error(`Cold Turkey 启动失败：${error.message}`);
   }
 
-  state.coldTurkey = {
-    ...state.coldTurkey,
-    available: true,
-    active: true,
-    blockName: name,
-    passwordRevealed: "",
-    recoveryAvailable: true,
-    status: "已发送密码锁定命令"
-  };
+  let vaultWarning = "";
+  try {
+    archiveColdTurkeyPassword(password, name, purpose);
+  } catch (error) {
+    vaultWarning = `；密码保险库写入失败：${error.message}`;
+  }
+  if (purpose === "penalty") {
+    state.coldTurkey.penaltyActive = true;
+    state.coldTurkey.penaltyStatus = `Games 已因惩戒营锁定${vaultWarning}`;
+  } else {
+    state.coldTurkey = {
+      ...state.coldTurkey,
+      available: true,
+      active: true,
+      blockName: name,
+      passwordRevealed: "",
+      recoveryAvailable: true,
+      awaitingUnlockConfirmation: false,
+      status: `已发送密码锁定命令${vaultWarning}`
+    };
+  }
 }
 
-function revealColdTurkeyPassword(status) {
-  if (!fs.existsSync(coldTurkeySessionPath())) return "";
-  const secret = readColdTurkeySecret();
-  state.coldTurkey = {
-    ...state.coldTurkey,
-    active: false,
-    blockName: secret.blockName,
-    passwordRevealed: secret.password,
-    recoveryAvailable: false,
-    status
-  };
-  clearColdTurkeySecret();
+async function getColdTurkeyBlockStatus(blockName) {
+  const name = validateBlockName(blockName);
+  const { stdout } = await execFileAsync(
+    COLD_TURKEY_EXECUTABLE,
+    ["-status", name],
+    { windowsHide: true, timeout: 15000 }
+  );
+  return parseBlockStatus(stdout);
+}
+
+async function rotatePenaltyLock() {
+  clearColdTurkeySecret("penalty");
+  await startColdTurkeyPasswordLock("Games", "penalty");
+  const status = await getColdTurkeyBlockStatus("Games");
+  if (status !== "enabled") {
+    throw new Error("已发送新密码锁定命令，但 Games 尚未报告 Enabled");
+  }
+  state.coldTurkey.penaltyLastCheckedAt = Date.now();
+  state.coldTurkey.penaltyStatus = "巡检发现锁已失效，已更换密码并重新锁定 Games";
+}
+
+async function reassertPenaltyLock() {
+  const secret = readColdTurkeySecret("penalty");
+  await execFileAsync(
+    COLD_TURKEY_EXECUTABLE,
+    ["-start", secret.blockName, "-password", secret.password],
+    { windowsHide: true, timeout: 15000 }
+  );
+  state.coldTurkey.penaltyActive = true;
+  state.coldTurkey.penaltyLastCheckedAt = Date.now();
+  state.coldTurkey.penaltyStatus = "状态查询无输出，已使用当前密码重新发送 Games 锁定命令";
+}
+
+function revealColdTurkeyPassword(status, expectedPurpose) {
+  const purpose = expectedPurpose || (
+    fs.existsSync(coldTurkeySessionPath("guard")) ? "guard" : "focus"
+  );
+  if (!fs.existsSync(coldTurkeySessionPath(purpose))) return "";
+  const secret = readColdTurkeySecret(purpose);
+  if (expectedPurpose && secret.purpose !== expectedPurpose) return "";
+  if (purpose === "penalty") {
+    state.coldTurkey.passwordRevealed = secret.password;
+    state.coldTurkey.penaltyActive = false;
+    state.coldTurkey.penaltyStatus = status;
+  } else {
+    state.coldTurkey = {
+      ...state.coldTurkey,
+      active: false,
+      blockName: secret.blockName,
+      passwordRevealed: secret.password,
+      recoveryAvailable: false,
+      awaitingUnlockConfirmation: purpose === "focus",
+      focusEndsAt: 0,
+      status
+    };
+  }
+  if (purpose === "focus") {
+    markColdTurkeySecretRevealed("focus");
+    previousFocusPasswordCandidate = findPreviousColdTurkeyPassword(
+      secret.blockName,
+      "focus",
+      secret.password
+    );
+    state.coldTurkey.previousPasswordAvailable = Boolean(previousFocusPasswordCandidate);
+  } else {
+    clearColdTurkeySecret(purpose);
+  }
   return secret.password;
+}
+
+function confirmColdTurkeyFocusUnlocked() {
+  if (!state.coldTurkey.awaitingUnlockConfirmation) return;
+  clearColdTurkeySecret("focus");
+  state.coldTurkey.active = false;
+  state.coldTurkey.passwordRevealed = "";
+  state.coldTurkey.recoveryAvailable = false;
+  state.coldTurkey.awaitingUnlockConfirmation = false;
+  state.coldTurkey.previousPasswordAvailable = false;
+  previousFocusPasswordCandidate = "";
+  state.coldTurkey.status = "已确认 Cold Turkey Block 解除，可开始下一轮";
+}
+
+function revealPreviousColdTurkeyPassword() {
+  if (!previousFocusPasswordCandidate) return;
+  state.coldTurkey.passwordRevealed = previousFocusPasswordCandidate;
+  state.coldTurkey.previousPasswordAvailable = false;
+  state.coldTurkey.awaitingUnlockConfirmation = true;
+  state.coldTurkey.status = "已显示保险库中的上一份专注密码；解除后请确认";
+}
+
+async function activateEntertainmentGuard(blockName) {
+  if (state.running || state.entertainment.active) {
+    throw new Error("请先结束当前会话");
+  }
+  if (state.entertainment.guard.active) {
+    throw new Error("24 小时娱乐限制已经开启");
+  }
+  if (fs.existsSync(coldTurkeySessionPath("focus"))
+    || fs.existsSync(coldTurkeySessionPath("guard"))) {
+    throw new Error("检测到另一把未恢复的 Cold Turkey 密码，请先处理当前锁定");
+  }
+  const name = validateBlockName(blockName);
+  await startColdTurkeyPasswordLock(name, "guard");
+  state.entertainment.guard = {
+    active: true,
+    endsAt: Date.now() + 24 * 60 * 60 * 1000,
+    remainingSeconds: 24 * 60 * 60,
+    blockName: name
+  };
+  saveEntertainmentGuard();
+  clearInterval(entertainmentGuardTimer);
+  entertainmentGuardTimer = setInterval(entertainmentGuardTick, 1000);
+  state.status = "24 小时娱乐限制已开启；娱乐津贴需要荣誉点兑换";
+}
+
+async function relockEntertainmentGuard() {
+  if (!state.entertainment.guard.active || state.entertainment.guard.endsAt <= Date.now()) return;
+  await startColdTurkeyPasswordLock(state.entertainment.guard.blockName, "guard");
+  state.status = "本次津贴时间结束，Cold Turkey 已使用新密码重新锁定";
 }
 
 function discoverGameRoots() {
@@ -314,26 +690,147 @@ function loadSettings() {
     if (personalityPrompt && personalityPrompt !== LEGACY_DEFAULT_PERSONALITY_PROMPT) {
       state.settings.personalityPrompt = personalityPrompt;
     }
+    state.settings.preferences = normalizePreferences(saved.preferences);
   } catch {
     // First launch uses the built-in personality.
   }
 }
 
+function saveSettings() {
+  fs.writeFileSync(settingsPath(), JSON.stringify(state.settings, null, 2), "utf8");
+}
+
+function getCompatibleApiConfig(config = state.config || state.settings.preferences) {
+  const preferences = state.settings.preferences;
+  return {
+    providerName: String(config?.apiProviderName || preferences.apiProviderName || "OpenAI").trim(),
+    baseUrl: normalizeApiBaseUrl(
+      config?.apiBaseUrl || preferences.apiBaseUrl
+    ),
+    textModel: String(config?.aiModel || preferences.aiModel || "gpt-5.4-mini").trim(),
+    ttsModel: String(config?.ttsModel || preferences.ttsModel || "gpt-4o-mini-tts").trim()
+  };
+}
+
+function getCompatibleApiKey() {
+  return compatibleApiKey;
+}
+
+function loadCompatibleApiKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const encrypted = fs.readFileSync(compatibleApiKeyPath());
+    compatibleApiKey = safeStorage.decryptString(encrypted);
+  } catch {
+    compatibleApiKey = "";
+  }
+}
+
+function saveCompatibleApiKey(apiKey) {
+  const key = String(apiKey || "").trim();
+  if (!key) {
+    compatibleApiKey = "";
+    try {
+      fs.rmSync(compatibleApiKeyPath(), { force: true });
+    } catch {
+      // Clearing an absent credential is already successful.
+    }
+    return;
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法安全保存 API Key");
+  }
+  compatibleApiKey = key;
+  fs.writeFileSync(compatibleApiKeyPath(), safeStorage.encryptString(key));
+}
+
+function saveDailyPlan() {
+  fs.writeFileSync(dailyPlanPath(), JSON.stringify(state.dailyPlan, null, 2), "utf8");
+}
+
+function loadDailyPlan() {
+  try {
+    state.dailyPlan = normalizeDailyPlan(
+      JSON.parse(fs.readFileSync(dailyPlanPath(), "utf8"))
+    );
+  } catch {
+    state.dailyPlan = emptyDailyPlan();
+  }
+}
+
+function ensureDailyPlanCurrent() {
+  const today = localDateKey();
+  if (state.dailyPlan?.date === today) return false;
+  state.dailyPlan = emptyDailyPlan();
+  saveDailyPlan();
+  return true;
+}
+
+function saveEntertainmentLedger() {
+  fs.writeFileSync(
+    entertainmentLedgerPath(),
+    JSON.stringify(state.entertainmentLedger, null, 2),
+    "utf8"
+  );
+}
+
+function loadEntertainmentLedger() {
+  try {
+    state.entertainmentLedger = normalizeEntertainmentLedger(
+      JSON.parse(fs.readFileSync(entertainmentLedgerPath(), "utf8"))
+    );
+  } catch {
+    state.entertainmentLedger = emptyEntertainmentLedger();
+  }
+}
+
+function ensureEntertainmentLedgerCurrent() {
+  const normalized = normalizeEntertainmentLedger(state.entertainmentLedger);
+  if (normalized.date === state.entertainmentLedger?.date) return false;
+  state.entertainmentLedger = normalized;
+  saveEntertainmentLedger();
+  return true;
+}
+
+function dailyPlanTick() {
+  const planReset = ensureDailyPlanCurrent();
+  const entertainmentReset = ensureEntertainmentLedgerCurrent();
+  const preferences = state.settings.preferences;
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  if (
+    preferences.dailyPlanReminderEnabled
+    && state.dailyPlan.items.length === 0
+    && currentTime === preferences.dailyPlanReminderTime
+    && lastDailyPlanReminderDate !== state.dailyPlan.date
+  ) {
+    lastDailyPlanReminderDate = state.dailyPlan.date;
+    notify("今日计划尚未制定", "打开 ОГАС政委，输入任务并生成今日计划。");
+  }
+  if (planReset || entertainmentReset) broadcast();
+}
+
 function awardCompletedSession() {
   state.rewards = awardSession(state.rewards, sessionDurationMinutes);
+  ensureEntertainmentLedgerCurrent();
+  state.entertainmentLedger.focusedMinutes += sessionDurationMinutes;
   saveRewards();
+  saveEntertainmentLedger();
+  void reconcilePenaltyLock();
   return state.rewards.lastEarned;
 }
 
 function deductForDistraction() {
   state.rewards = applyDistractionPenalty(state.rewards);
   saveRewards();
+  void reconcilePenaltyLock();
   return state.rewards.lastDeducted;
 }
 
 function deductForForcedExit(reason) {
   state.rewards = applyForcedExitPenalty(state.rewards);
   saveRewards();
+  void reconcilePenaltyLock();
   addHistory({
     at: new Date().toISOString(),
     verdict: "forced-exit",
@@ -357,45 +854,210 @@ async function getActiveWindow() {
 
 async function capturePrimaryScreen() {
   const display = screen.getPrimaryDisplay();
+  const physicalWidth = Math.round(display.size.width * display.scaleFactor);
+  const physicalHeight = Math.round(display.size.height * display.scaleFactor);
+  const highQuality = state.config?.visionQuality !== "standard";
+  const maxDimension = highQuality ? 2560 : 1600;
+  const scale = Math.min(1, maxDimension / Math.max(physicalWidth, physicalHeight));
   const sources = await desktopCapturer.getSources({
     types: ["screen"],
     thumbnailSize: {
-      width: Math.min(1280, display.size.width),
-      height: Math.round(Math.min(1280, display.size.width) * display.size.height / display.size.width)
+      width: Math.round(physicalWidth * scale),
+      height: Math.round(physicalHeight * scale)
     }
   });
-  return sources[0]?.thumbnail.toJPEG(58).toString("base64") || null;
+  return sources[0]?.thumbnail.toJPEG(highQuality ? 88 : 68).toString("base64") || null;
 }
 
-function extractResponseText(response) {
-  if (typeof response.output_text === "string") return response.output_text;
-  for (const item of response.output || []) {
-    for (const content of item.content || []) {
-      if (typeof content.text === "string") return content.text;
+function recordAiUsage(channel, provider, model, { fallback = false } = {}) {
+  state.aiUsage[channel] = {
+    provider,
+    model,
+    fallback,
+    at: new Date().toISOString()
+  };
+}
+
+async function reconcilePenaltyLock() {
+  if (penaltyLockReconcileInFlight) return;
+  penaltyLockReconcileInFlight = true;
+  try {
+    const inPenalty = normalizeRewards(state.rewards).rank === "惩戒营";
+    const hasPenaltySecret = fs.existsSync(coldTurkeySessionPath("penalty"));
+    if (inPenalty && !hasPenaltySecret) {
+      await startColdTurkeyPasswordLock("Games", "penalty");
+      const status = await getColdTurkeyBlockStatus("Games");
+      if (status !== "enabled") {
+        throw new Error("Games 锁定命令已发送，但状态尚未生效");
+      }
+      state.coldTurkey.penaltyLastCheckedAt = Date.now();
+      state.status = "已进入惩戒营，Cold Turkey Games 已单独锁定";
+    } else if (inPenalty && hasPenaltySecret) {
+      const status = await getColdTurkeyBlockStatus("Games");
+      state.coldTurkey.penaltyLastCheckedAt = Date.now();
+      if (status === "disabled") {
+        await rotatePenaltyLock();
+        state.status = "惩戒营巡检发现 Games 锁失效，已自动更换密码并重新锁定";
+      } else if (status === "enabled") {
+        state.coldTurkey.penaltyActive = true;
+        state.coldTurkey.penaltyStatus = "Games 锁巡检正常";
+      } else {
+        await reassertPenaltyLock();
+      }
+    } else if (!inPenalty && hasPenaltySecret) {
+      const password = revealColdTurkeyPassword(
+        "已恢复正常身份，Games 解锁密码已公布",
+        "penalty"
+      );
+      if (password) state.status = "已恢复正常身份，Games 解锁密码已公布";
     }
+  } catch (error) {
+    state.coldTurkey.penaltyStatus = `惩戒营 Games 锁同步失败：${error.message}`;
+  } finally {
+    penaltyLockReconcileInFlight = false;
+    broadcast();
   }
-  return "";
 }
 
-async function requestAiClassification(content) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+function saveEntertainmentGuard() {
+  if (!state.entertainment.guard.active) {
+    try {
+      fs.unlinkSync(entertainmentGuardPath());
+    } catch {
+      // No persisted guard state.
+    }
+    return;
+  }
+  fs.writeFileSync(
+    entertainmentGuardPath(),
+    JSON.stringify({
+      version: 1,
+      endsAt: state.entertainment.guard.endsAt,
+      blockName: state.entertainment.guard.blockName
+    }, null, 2),
+    "utf8"
+  );
+}
+
+function clearEntertainmentGuard(message = "24 小时娱乐限制已结束") {
+  clearInterval(entertainmentGuardTimer);
+  entertainmentGuardTimer = null;
+  state.entertainment.guard = {
+    ...state.entertainment.guard,
+    active: false,
+    endsAt: 0,
+    remainingSeconds: 0
+  };
+  saveEntertainmentGuard();
+  const password = revealColdTurkeyPassword(message, "guard");
+  if (password) state.status = message;
+}
+
+function entertainmentGuardTick() {
+  if (!state.entertainment.guard.active) return;
+  const remainingSeconds = Math.max(
+    0,
+    Math.ceil((state.entertainment.guard.endsAt - Date.now()) / 1000)
+  );
+  state.entertainment.guard.remainingSeconds = remainingSeconds;
+  if (remainingSeconds === 0) {
+    clearEntertainmentGuard();
+    if (state.entertainment.active) stopEntertainment("24 小时限制已结束，娱乐模式已停止");
+  }
+  broadcast();
+}
+
+async function restoreEntertainmentGuard() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(entertainmentGuardPath(), "utf8"));
+    const endsAt = Number(saved.endsAt || 0);
+    const blockName = validateBlockName(saved.blockName);
+    if (endsAt <= Date.now()) {
+      clearEntertainmentGuard();
+      return;
+    }
+    state.entertainment.guard = {
+      active: true,
+      endsAt,
+      remainingSeconds: Math.ceil((endsAt - Date.now()) / 1000),
+      blockName
+    };
+    if (!fs.existsSync(coldTurkeySessionPath("guard"))) {
+      await startColdTurkeyPasswordLock(blockName, "guard");
+    }
+    clearInterval(entertainmentGuardTimer);
+    entertainmentGuardTimer = setInterval(entertainmentGuardTick, 1000);
+  } catch {
+    state.entertainment.guard = {
+      ...state.entertainment.guard,
+      active: false,
+      endsAt: 0,
+      remainingSeconds: 0
+    };
+  }
+}
+
+async function requestAiClassification(
+  content,
+  { modality = "text", fallback = false, maxOutputTokens = 120 } = {}
+) {
+  const api = getCompatibleApiConfig();
+  const convertedContent = content.map((item) => {
+    if (item.type === "input_text") return { type: "text", text: item.text };
+    if (item.type === "input_image") {
+      return {
+        type: "image_url",
+        image_url: { url: item.image_url, detail: item.detail }
+      };
+    }
+    return item;
+  });
+  const messageContent = modality === "text"
+    ? convertedContent.map((item) => item.text || "").join("\n")
+    : convertedContent;
+  const endpoint = compatibleEndpoint(api.baseUrl, "chat/completions");
+  const request = async (tokenParameter) => fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${getCompatibleApiKey()}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: state.config?.aiModel || "gpt-5.4-mini",
-      max_output_tokens: 120,
-      input: [{ role: "user", content }]
+      model: api.textModel,
+      ...completionTokenBody(maxOutputTokens, tokenParameter),
+      messages: [{ role: "user", content: messageContent }]
     })
   });
 
+  let tokenParameter = "max_completion_tokens";
+  let response = await request(tokenParameter);
   if (!response.ok) {
-    throw new Error(`OpenAI API ${response.status}`);
+    let detail = (await response.text()).slice(0, 1000);
+    const alternate = response.status === 400
+      ? alternateTokenParameter(detail, tokenParameter)
+      : "";
+    if (alternate) {
+      tokenParameter = alternate;
+      response = await request(tokenParameter);
+      if (response.ok) {
+        detail = "";
+      } else {
+        detail = (await response.text()).slice(0, 1000);
+      }
+    }
+    if (response.ok) {
+      // Continue with the successful compatibility retry.
+    } else {
+      detail = detail.slice(0, 300);
+      throw new Error(`${api.providerName} API ${response.status}${detail ? `：${detail}` : ""}`);
+    }
   }
 
-  return extractResponseText(await response.json()).trim();
+  const text = extractChatCompletionText(await response.json()).trim();
+  if (!text) throw new Error(`${api.providerName} 返回了空响应`);
+  recordAiUsage("content", api.providerName, api.textModel, { fallback });
+  state.aiUsage.content.modality = modality;
+  return text;
 }
 
 function verdictSchema() {
@@ -409,29 +1071,38 @@ function verdictSchema() {
   };
 }
 
-async function requestTextModel(prompt, { format } = {}) {
-  const ollamaRequested = state.config?.ollamaEnabled;
+async function requestTextModel(prompt, { format, maxOutputTokens } = {}) {
+  const modelConfig = (state.running || state.entertainment.active)
+    ? state.config
+    : state.settings.preferences;
+  const ollamaRequested = modelConfig.ollamaEnabled;
   const useOllama = ollamaRequested
     && state.ollama.available
-    && hasModel(state.ollama, state.config.ollamaTextModel);
+    && hasModel(state.ollama, modelConfig.ollamaTextModel);
   if (useOllama) {
     try {
-      return await ollamaChat({
-        model: state.config.ollamaTextModel,
+      const text = await ollamaChat({
+        model: modelConfig.ollamaTextModel,
         prompt,
         format
       });
+      recordAiUsage("content", "Ollama", modelConfig.ollamaTextModel);
+      state.aiUsage.content.modality = "text";
+      return text;
     } catch (error) {
-      if (!state.config.ollamaFallbackToOpenAi) throw error;
+      if (!modelConfig.ollamaFallbackToOpenAi) throw error;
     }
   }
-  if (ollamaRequested && !useOllama && !state.config.ollamaFallbackToOpenAi) {
-    throw new Error(`本地文字模型 ${state.config.ollamaTextModel} 不可用`);
+  if (ollamaRequested && !useOllama && !modelConfig.ollamaFallbackToOpenAi) {
+    throw new Error(`本地文字模型 ${modelConfig.ollamaTextModel} 不可用`);
   }
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("本地文字模型不可用，且没有 OpenAI API key");
+  if (!getCompatibleApiKey()) {
+    throw new Error("本地文字模型不可用，且没有配置兼容 API Key");
   }
-  return requestAiClassification([{ type: "input_text", text: prompt }]);
+  return requestAiClassification(
+    [{ type: "input_text", text: prompt }],
+    { modality: "text", fallback: Boolean(ollamaRequested), maxOutputTokens }
+  );
 }
 
 async function requestVisionModel(prompt, imageBase64, { format } = {}) {
@@ -441,12 +1112,15 @@ async function requestVisionModel(prompt, imageBase64, { format } = {}) {
     && hasModel(state.ollama, state.config.ollamaVisionModel);
   if (useOllama) {
     try {
-      return await ollamaChat({
+      const text = await ollamaChat({
         model: state.config.ollamaVisionModel,
         prompt,
         imageBase64,
         format
       });
+      recordAiUsage("content", "Ollama", state.config.ollamaVisionModel);
+      state.aiUsage.content.modality = "vision";
+      return text;
     } catch (error) {
       if (!state.config.ollamaFallbackToOpenAi) throw error;
     }
@@ -454,17 +1128,20 @@ async function requestVisionModel(prompt, imageBase64, { format } = {}) {
   if (ollamaRequested && !useOllama && !state.config.ollamaFallbackToOpenAi) {
     throw new Error(`本地视觉模型 ${state.config.ollamaVisionModel} 不可用`);
   }
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("本地视觉模型不可用，且没有 OpenAI API key");
+  if (!getCompatibleApiKey()) {
+    throw new Error("本地视觉模型不可用，且没有配置兼容 API Key");
   }
-  return requestAiClassification([
-    { type: "input_text", text: prompt },
-    {
-      type: "input_image",
-      image_url: `data:image/jpeg;base64,${imageBase64}`,
-      detail: "low"
-    }
-  ]);
+  return requestAiClassification(
+    [
+      { type: "input_text", text: prompt },
+      {
+        type: "input_image",
+        image_url: `data:image/jpeg;base64,${imageBase64}`,
+        detail: state.config?.visionQuality === "standard" ? "low" : "high"
+      }
+    ],
+    { modality: "vision", fallback: Boolean(ollamaRequested) }
+  );
 }
 
 function classificationPrompt(activity, hasScreenshot) {
@@ -543,6 +1220,111 @@ async function generateProgressCommentary(activity) {
   }
 }
 
+async function generateEntertainmentCommentary() {
+  if (!state.entertainment.active || entertainmentCommentaryInFlight || !entertainmentSession) return;
+  const session = entertainmentSession;
+  entertainmentCommentaryInFlight = true;
+  try {
+    const [activity, screenshot] = await Promise.all([
+      getActiveWindow(),
+      capturePrimaryScreen()
+    ]);
+    if (!screenshot || !state.entertainment.active || entertainmentSession?.id !== session.id) return;
+    const text = await requestVisionModel(
+      buildEntertainmentPrompt(state.settings.personalityPrompt, activity, session.memory),
+      screenshot
+    );
+    if (!state.entertainment.active || entertainmentSession?.id !== session.id) return;
+    const commentary = sanitizeCommentary(text);
+    if (!commentary) return;
+    session.memory.push({
+      processName: activity.processName || "",
+      title: activity.title || "",
+      commentary
+    });
+    session.memory = session.memory.slice(-MAX_ENTERTAINMENT_MEMORY_TURNS);
+    state.entertainment.memoryTurns = session.memory.length;
+    state.latest = {
+      at: new Date().toISOString(),
+      verdict: "entertainment",
+      reason: commentary
+    };
+    state.status = `娱乐点评：${commentary}`;
+    broadcast();
+    await speakCommissar(commentary);
+    if (state.entertainment.active && entertainmentSession?.id === session.id) {
+      lastEntertainmentCommentaryAt = Date.now();
+    }
+  } catch (error) {
+    if (state.entertainment.active && entertainmentSession?.id === session.id) {
+      state.status = `娱乐点评暂不可用：${error.message}`;
+      broadcast();
+    }
+  } finally {
+    if (!entertainmentSession || entertainmentSession.id === session.id) {
+      entertainmentCommentaryInFlight = false;
+    }
+  }
+}
+
+function entertainmentTick() {
+  if (!state.entertainment.active) return;
+  if (state.entertainment.paid) {
+    state.entertainment.remainingSeconds = Math.max(
+      0,
+      Math.ceil((state.entertainment.endsAt - Date.now()) / 1000)
+    );
+    if (state.entertainment.remainingSeconds === 0) {
+      void stopEntertainment("本次娱乐津贴已用完");
+      return;
+    }
+  }
+  state.entertainment.elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - state.entertainment.startedAt) / 1000)
+  );
+  if (!state.entertainment.commentaryEnabled) {
+    broadcast();
+    return;
+  }
+  const intervalMs = state.entertainment.intervalSeconds * 1000;
+  if (Date.now() - lastEntertainmentCommentaryAt >= intervalMs) {
+    lastEntertainmentCommentaryAt = Date.now();
+    void generateEntertainmentCommentary();
+  }
+  broadcast();
+}
+
+async function stopEntertainment(message = "娱乐模式已停止", { relock = true } = {}) {
+  if (entertainmentStopping) return publicState();
+  entertainmentStopping = true;
+  clearInterval(entertainmentTimer);
+  entertainmentTimer = null;
+  entertainmentSession = null;
+  entertainmentCommentaryInFlight = false;
+  const shouldRelock = relock && state.entertainment.paid && state.entertainment.guard.active;
+  state.entertainment = {
+    ...state.entertainment,
+    active: false,
+    endsAt: 0,
+    remainingSeconds: 0,
+    paid: false,
+    costPoints: 0,
+    memoryTurns: 0
+  };
+  state.status = message;
+  if (shouldRelock) {
+    try {
+      await relockEntertainmentGuard();
+    } catch (error) {
+      state.status = `娱乐已停止，但 Cold Turkey 重新锁定失败：${error.message}`;
+    }
+  }
+  entertainmentStopping = false;
+  broadcast();
+  return publicState();
+}
+
 async function evaluateCompletionEvidence(evidence) {
   const proof = String(evidence || "").trim();
   if (proof.length < 20) {
@@ -569,6 +1351,100 @@ async function evaluateCompletionEvidence(evidence) {
   });
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return { accepted: false, reason: "政委未能读懂证据，请写得更具体。" };
+  const parsed = JSON.parse(json);
+  return {
+    accepted: parsed.accepted === true,
+    reason: String(parsed.reason || "未说明理由").slice(0, 100)
+  };
+}
+
+async function generateDailyPlan(sourceTasks) {
+  const tasks = String(sourceTasks || "").trim();
+  if (tasks.length < 3) throw new Error("请先写下今天要做的任务。");
+  const existingItems = state.dailyPlan.items || [];
+  const isAppend = existingItems.length > 0;
+  if (existingItems.length >= 12) throw new Error("今日计划已达到 12 项上限。");
+  const prompt = [
+    "你是一名务实的每日计划助手。",
+    isAppend
+      ? `今日已有计划：\n${existingItems.map((item) => `- ${item.title}`).join("\n")}`
+      : "",
+    `用户${isAppend ? "临时追加" : "今天想做"}的事情：\n${tasks}`,
+    isAppend
+      ? "只把新增内容整理为 1 至 5 个行动项，不要重复已有计划。"
+      : "将内容整理为 3 至 10 个今天可以完成、边界清晰、可提交证据验收的行动项。",
+    "不要擅自加入用户没有要求的大型目标。可以合理排序，并给出简短执行说明和建议时间。",
+    '只返回 JSON：{"items":[{"title":"任务名","details":"完成标准","suggestedTime":"建议时段或时长"}]}。'
+  ].join("\n");
+  const text = await requestTextModel(prompt, {
+    maxOutputTokens: 900,
+    format: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              details: { type: "string" },
+              suggestedTime: { type: "string" }
+            },
+            required: ["title", "details", "suggestedTime"]
+          }
+        }
+      },
+      required: ["items"]
+    }
+  });
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error("AI 未能生成有效计划，请稍后重试。");
+  const parsed = JSON.parse(json);
+  const generatedItems = normalizePlanItems(parsed.items).map((item) => ({
+    ...item,
+    id: crypto.randomUUID()
+  }));
+  const merged = appendPlanItems(existingItems, generatedItems);
+  if (merged.addedCount === 0) throw new Error("没有发现可追加的新目标，可能与现有计划重复或已达上限。");
+  state.dailyPlan = {
+    ...state.dailyPlan,
+    date: localDateKey(),
+    sourceTasks: [state.dailyPlan.sourceTasks, tasks].filter(Boolean).join("\n").slice(0, 4000),
+    items: merged.items,
+    generatedAt: state.dailyPlan.generatedAt || Date.now(),
+    status: isAppend
+      ? `已追加 ${merged.addedCount} 项，今日共 ${merged.items.length} 项`
+      : `今日计划已生成，共 ${merged.items.length} 项`
+  };
+  saveDailyPlan();
+}
+
+async function reviewDailyPlanEvidence(item, evidence) {
+  const proof = String(evidence || "").trim();
+  if (proof.length < 20) {
+    return { accepted: false, reason: "证据过于简略，请说明成果、位置或验收结果。" };
+  }
+  const prompt = [
+    "你负责审核一项每日计划是否确实完成。",
+    `计划项：${item.title}`,
+    `完成标准：${item.details || "未额外说明"}`,
+    `用户证据：${proof}`,
+    "只有证据具体说明了成果、可核验位置、数量或明确验收结果时才通过。",
+    '只返回 JSON：{"accepted":true|false,"reason":"不超过50字"}。'
+  ].join("\n");
+  const text = await requestTextModel(prompt, {
+    maxOutputTokens: 180,
+    format: {
+      type: "object",
+      properties: {
+        accepted: { type: "boolean" },
+        reason: { type: "string" }
+      },
+      required: ["accepted", "reason"]
+    }
+  });
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) return { accepted: false, reason: "AI 未能读懂证据，请写得更具体。" };
   const parsed = JSON.parse(json);
   return {
     accepted: parsed.accepted === true,
@@ -610,58 +1486,61 @@ function playWav(filePath) {
   );
 }
 
-async function speakWithOpenAi(text, voice = "onyx") {
+async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
+  const normalizedSpeed = normalizeTtsSpeed(speed);
+  const api = getCompatibleApiConfig();
   const cacheDir = path.join(app.getPath("userData"), "voice-cache");
   fs.mkdirSync(cacheDir, { recursive: true });
   const personalityPrompt = state.settings.personalityPrompt;
   const hash = crypto.createHash("sha256")
-    .update(`${voice}:${personalityPrompt}:${text}`)
+    .update(`${api.baseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${personalityPrompt}:${text}`)
     .digest("hex")
     .slice(0, 20);
   const audioPath = path.join(cacheDir, `${hash}.wav`);
 
   if (!fs.existsSync(audioPath)) {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    const response = await fetch(compatibleEndpoint(api.baseUrl, "audio/speech"), {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${getCompatibleApiKey()}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini-tts",
+        model: api.ttsModel,
         voice,
         input: text,
-        instructions: [
-          "Speak in Mandarin Chinese with a deep, resonant adult male voice.",
-          "Use deliberate pacing and crisp articulation. Do not shout.",
-          `Persona and delivery instructions: ${personalityPrompt}`
-        ].join("\n"),
+        speed: normalizedSpeed,
         response_format: "wav"
       })
     });
-    if (!response.ok) throw new Error(`OpenAI speech ${response.status}`);
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 300);
+      throw new Error(`${api.providerName} TTS ${response.status}${detail ? `：${detail}` : ""}`);
+    }
     fs.writeFileSync(audioPath, Buffer.from(await response.arrayBuffer()));
   }
 
   await playWav(audioPath);
+  recordAiUsage("speech", api.providerName, api.ttsModel);
+  broadcast();
 }
 
 async function speakCommissar(text) {
-  if (speechInFlight) return;
-  speechInFlight = true;
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      state.status = "语音提醒需要 OPENAI_API_KEY";
+  const voice = state.config?.ttsVoice || "onyx";
+  const speed = state.config?.ttsSpeed;
+  const speechTask = speechQueue.then(async () => {
+    if (!getCompatibleApiKey()) {
+      state.status = "语音提醒需要兼容 API Key";
       broadcast();
       return;
     }
-    await speakWithOpenAi(text, state.config?.ttsVoice || "onyx");
-  } catch (error) {
-    state.status = `OpenAI 语音暂不可用：${error.message}`;
+    await speakWithOpenAi(text, voice, speed);
+  }).catch((error) => {
+    state.status = `AI 语音暂不可用：${error.message}`;
     broadcast();
-  } finally {
-    speechInFlight = false;
-  }
+  });
+  speechQueue = speechTask;
+  return speechTask;
 }
 
 function randomCommissarLine() {
@@ -711,7 +1590,7 @@ async function monitorTick() {
   state.remainingSeconds = Math.max(0, Math.ceil((sessionEndsAt - Date.now()) / 1000));
   if (state.remainingSeconds === 0) {
     const earned = awardCompletedSession();
-    revealColdTurkeyPassword("任务自然完成，可用密码提前停止 block");
+    revealColdTurkeyPassword("任务自然完成，可用密码提前停止 block", "focus");
     stopSession(`本轮完成，获得 ${earned} 点`);
     notify("本轮完成", `获得 ${earned} 点。先休息一下，再决定下一轮。`);
     return;
@@ -723,7 +1602,7 @@ async function monitorTick() {
     Math.min(60, Number(state.config.commentaryIntervalMinutes) || 10)
   ) * 60 * 1000;
   const commentaryDue = state.config.commentaryEnabled
-    && (process.env.OPENAI_API_KEY || (state.config.ollamaEnabled && state.ollama.available))
+    && (getCompatibleApiKey() || (state.config.ollamaEnabled && state.ollama.available))
     && Date.now() - lastProgressCommentaryAt >= commentaryIntervalMs
     && Date.now() - lastVisionAiCheckAt >= VISION_CHECK_INTERVAL_MS;
   if (commentaryDue) {
@@ -733,7 +1612,7 @@ async function monitorTick() {
 
   let result = classifyActivity(activity, state.config);
   const canUseAi = state.config.aiEnabled
-    && (process.env.OPENAI_API_KEY || (state.config.ollamaEnabled && state.ollama.available));
+    && (getCompatibleApiKey() || (state.config.ollamaEnabled && state.ollama.available));
   const textDue = Date.now() - lastTextAiCheckAt >= TEXT_CHECK_INTERVAL_MS;
 
   if (result.verdict === "unknown" && canUseAi && textDue) {
@@ -798,6 +1677,16 @@ function stopSession(message = "已停止") {
   return publicState();
 }
 
+function forceStopSession(reason, message) {
+  deductForForcedExit(reason);
+  const password = revealColdTurkeyPassword(
+    "已强制结束，本轮 Cold Turkey 密码已公布；解除后请确认",
+    "focus"
+  );
+  stopSession(message);
+  return password;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1040,
@@ -805,7 +1694,7 @@ function createWindow() {
     minWidth: 820,
     minHeight: 640,
     backgroundColor: "#f4f1e8",
-    title: "AI Commissar",
+    title: "ОГАС政委",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -831,8 +1720,7 @@ function createWindow() {
     });
     closePromptOpen = false;
     if (result.response === 1) {
-      deductForForcedExit("关闭应用时强行退出");
-      stopSession("已强行退出，扣除 3 点");
+      forceStopSession("关闭应用时强行退出", "已强行退出，扣除 3 点；Cold Turkey 密码已公布");
       allowWindowClose = true;
       mainWindow.close();
     }
@@ -842,6 +1730,12 @@ function createWindow() {
 
 ipcMain.handle("state:get", () => publicState());
 ipcMain.handle("session:start", async (_, config) => {
+  if (state.entertainment.active) return publicState();
+  if (state.entertainment.guard.active && config.coldTurkeyEnabled) {
+    state.status = "24 小时娱乐限制已在使用 Cold Turkey，专注会话不能同时创建另一把密码锁";
+    broadcast();
+    return publicState();
+  }
   const durationMinutes = Math.max(5, Math.min(240, Number(config.durationMinutes) || 25));
   if (config.coldTurkeyEnabled) {
     try {
@@ -853,6 +1747,7 @@ ipcMain.handle("session:start", async (_, config) => {
     }
   } else {
     state.coldTurkey.passwordRevealed = "";
+    state.coldTurkey.focusEndsAt = 0;
     state.coldTurkey.status = "本轮未启用";
   }
   state = {
@@ -879,13 +1774,19 @@ ipcMain.handle("session:start", async (_, config) => {
       ollamaTextModel: String(config.ollamaTextModel || "qwen3:8b").trim(),
       ollamaVisionModel: String(config.ollamaVisionModel || "qwen3-vl:8b").trim(),
       ollamaFallbackToOpenAi: config.ollamaFallbackToOpenAi !== false,
+      visionQuality: normalizeVisionQuality(config.visionQuality),
       ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
+      ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
       aiModel: config.aiModel || "gpt-5.4-mini"
     },
     status: "专注会话已开始",
     history: []
   };
   sessionEndsAt = Date.now() + durationMinutes * 60000;
+  if (config.coldTurkeyEnabled) {
+    state.coldTurkey.focusEndsAt = sessionEndsAt;
+    state.coldTurkey.status = "密码锁已启用；本轮结束时由应用公布密码";
+  }
   sessionDurationMinutes = durationMinutes;
   sessionDistractionCount = 0;
   lastTextAiCheckAt = 0;
@@ -898,6 +1799,140 @@ ipcMain.handle("session:start", async (_, config) => {
   broadcast();
   return publicState();
 });
+ipcMain.handle("entertainment:start", async (_, config) => {
+  if (state.running || state.entertainment.active) return publicState();
+  ensureEntertainmentLedgerCurrent();
+  state.rewards = normalizeRewards(state.rewards);
+  const access = entertainmentAccess(state.rewards, state.entertainmentLedger);
+  const durationMinutes = Math.max(5, Math.min(240, Number(config.durationMinutes) || 30));
+  const costPoints = entertainmentCost(durationMinutes);
+  if (access.blockedByPenalty) {
+    state.status = "惩戒营状态不能开启娱乐模式";
+    broadcast();
+    return publicState();
+  }
+  if (!access.focusRequirementMet) {
+    state.status = `工作日累计专注不足 3 小时：今日已完成 ${access.focusedMinutes} 分钟`;
+    broadcast();
+    return publicState();
+  }
+  if (access.remainingMinutes !== null && durationMinutes > access.remainingMinutes) {
+    state.status = `今日娱乐津贴不足：余额 ${access.remainingMinutes} 分钟`;
+    broadcast();
+    return publicState();
+  }
+  if (state.rewards.points < costPoints) {
+    state.status = `积分不足：${durationMinutes} 分钟需要 ${costPoints} 点，当前 ${state.rewards.points} 点`;
+    broadcast();
+    return publicState();
+  }
+  const entertainmentConfig = normalizeEntertainmentConfig(config);
+  const canUseVision = getCompatibleApiKey()
+    || (entertainmentConfig.ollamaEnabled && state.ollama.available);
+  if (entertainmentConfig.commentaryEnabled && !getCompatibleApiKey()) {
+    state.status = "娱乐模式的 AI 语音需要兼容 API Key";
+    broadcast();
+    return publicState();
+  }
+  if (entertainmentConfig.commentaryEnabled && !canUseVision) {
+    state.status = "娱乐模式需要兼容 API 或可用的 Ollama 视觉模型";
+    broadcast();
+    return publicState();
+  }
+  if (state.entertainment.guard.active) {
+    const guardRemainingMinutes = Math.floor(
+      (state.entertainment.guard.endsAt - Date.now()) / 60000
+    );
+    if (guardRemainingMinutes < durationMinutes) {
+      state.status = `24 小时限制仅剩 ${Math.max(0, guardRemainingMinutes)} 分钟，无法兑换 ${durationMinutes} 分钟`;
+      broadcast();
+      return publicState();
+    }
+    try {
+      if (!fs.existsSync(coldTurkeySessionPath("guard"))) {
+        await relockEntertainmentGuard();
+      }
+      const password = revealColdTurkeyPassword(
+        `已兑换 ${durationMinutes} 分钟娱乐津贴，请用此密码暂停 block`,
+        "guard"
+      );
+      if (!password) throw new Error("没有可用的 Cold Turkey 解锁密码");
+      state.rewards = redeemEntertainment(state.rewards, durationMinutes);
+      saveRewards();
+    } catch (error) {
+      state.status = `娱乐兑换失败：${error.message}`;
+      broadcast();
+      return publicState();
+    }
+  } else {
+    state.rewards = redeemEntertainment(state.rewards, durationMinutes);
+    saveRewards();
+  }
+  state.entertainmentLedger.redeemedMinutes += durationMinutes;
+  saveEntertainmentLedger();
+  state.config = {
+    ...(state.config || {}),
+    ...entertainmentConfig
+  };
+  state.entertainment = {
+    active: true,
+    startedAt: Date.now(),
+    elapsedSeconds: 0,
+    endsAt: Date.now() + durationMinutes * 60 * 1000,
+    remainingSeconds: durationMinutes * 60,
+    paid: true,
+    costPoints,
+    commentaryEnabled: entertainmentConfig.commentaryEnabled,
+    intervalSeconds: entertainmentConfig.intervalSeconds,
+    memoryTurns: 0,
+    guard: state.entertainment.guard
+  };
+  entertainmentSession = {
+    id: crypto.randomUUID(),
+    memory: []
+  };
+  state.latest = null;
+  state.status = state.entertainment.guard.active
+    ? `已消费 ${costPoints} 点，获得 ${durationMinutes} 分钟娱乐津贴；Cold Turkey 密码已显示`
+    : `已消费 ${costPoints} 点，获得 ${durationMinutes} 分钟娱乐津贴`;
+  lastEntertainmentCommentaryAt = Date.now();
+  clearInterval(entertainmentTimer);
+  entertainmentTimer = setInterval(entertainmentTick, 1000);
+  entertainmentTick();
+  broadcast();
+  return publicState();
+});
+ipcMain.handle("entertainment:stop", async () => {
+  if (state.entertainment.active) return stopEntertainment();
+  return publicState();
+});
+
+ipcMain.handle("entertainment:guard:start", async (_, blockName) => {
+  if (normalizeRewards(state.rewards).rank === "惩戒营") {
+    state.status = "惩戒营状态不能开启 24 小时娱乐限制";
+    broadcast();
+    return publicState();
+  }
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "开启 24 小时娱乐限制",
+      message: "接下来 24 小时，娱乐只能使用津贴开启",
+      detail: "Cold Turkey 将立即用随机密码锁定指定 Block。请确认该 Block 已包含需要限制的游戏和娱乐网站。提前恢复密码会按异常中止扣除 3 点。",
+      buttons: ["取消", "确认开启 24 小时限制"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    });
+    if (result.response !== 1) return publicState();
+    await activateEntertainmentGuard(blockName || "AI Commissar");
+  } catch (error) {
+    state.status = `24 小时娱乐限制开启失败：${error.message}`;
+  }
+  broadcast();
+  return publicState();
+});
+
 ipcMain.handle("session:stop:request", async (_, evidence) => {
   if (!state.running) return { ...publicState(), stopReview: null };
   try {
@@ -908,7 +1943,7 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
         verdict: "completion",
         reason: `完成证据通过：${review.reason}`
       });
-      const password = revealColdTurkeyPassword("证据通过，可用密码提前停止 block");
+      const password = revealColdTurkeyPassword("证据通过，可用密码提前停止 block", "focus");
       stopSession(`证据通过：${review.reason}`);
       review.coldTurkeyPassword = password;
     } else {
@@ -925,8 +1960,7 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
 });
 ipcMain.handle("session:stop:force", () => {
   if (state.running) {
-    deductForForcedExit("手动强行停止");
-    stopSession("已强行停止，扣除 3 点");
+    forceStopSession("手动强行停止", "已强行停止，扣除 3 点；Cold Turkey 密码已公布");
   }
   return publicState();
 });
@@ -945,33 +1979,125 @@ ipcMain.handle("cold-turkey:recover", async () => {
   if (result.response === 1) {
     deductForForcedExit("恢复 Cold Turkey 密码");
     revealColdTurkeyPassword("已恢复密码并扣除 3 点");
+    if (state.entertainment.guard.active) {
+      state.entertainment.guard.active = false;
+      saveEntertainmentGuard();
+      clearInterval(entertainmentGuardTimer);
+    }
     broadcast();
   }
   return publicState();
 });
-ipcMain.handle("voice:preview", async (_, voice) => {
-  const selectedVoice = ["onyx", "echo", "ash"].includes(voice) ? voice : "onyx";
+ipcMain.handle("cold-turkey:confirm-unlocked", () => {
+  confirmColdTurkeyFocusUnlocked();
+  broadcast();
+  return publicState();
+});
+ipcMain.handle("cold-turkey:reveal-previous", () => {
+  revealPreviousColdTurkeyPassword();
+  broadcast();
+  return publicState();
+});
+ipcMain.handle("voice:preview", async (_, options = {}) => {
+  const selectedVoice = ["onyx", "echo", "ash"].includes(options.voice) ? options.voice : "onyx";
   const previousVoice = state.config?.ttsVoice;
-  state.config = { ...(state.config || {}), ttsVoice: selectedVoice };
+  const previousSpeed = state.config?.ttsSpeed;
+  state.config = {
+    ...(state.config || {}),
+    ttsVoice: selectedVoice,
+    ttsSpeed: normalizeTtsSpeed(options.speed)
+  };
   await speakCommissar(await generateCommissarLine());
   if (previousVoice) state.config.ttsVoice = previousVoice;
+  else delete state.config.ttsVoice;
+  if (previousSpeed) state.config.ttsSpeed = previousSpeed;
+  else delete state.config.ttsSpeed;
   return publicState();
 });
 ipcMain.handle("settings:personality:save", (_, prompt) => {
   const personalityPrompt = String(prompt || "").trim().slice(0, 2000);
   if (!personalityPrompt) return publicState();
   state.settings.personalityPrompt = personalityPrompt;
-  fs.writeFileSync(settingsPath(), JSON.stringify(state.settings, null, 2), "utf8");
+  saveSettings();
   state.status = "人格 Prompt 已保存";
   broadcast();
   return publicState();
 });
 ipcMain.handle("settings:personality:reset", () => {
   state.settings.personalityPrompt = DEFAULT_PERSONALITY_PROMPT;
-  fs.writeFileSync(settingsPath(), JSON.stringify(state.settings, null, 2), "utf8");
+  saveSettings();
   state.status = "已恢复默认人格";
   broadcast();
   return publicState();
+});
+ipcMain.handle("settings:preferences:save", (_, preferences) => {
+  state.settings.preferences = normalizePreferences(preferences);
+  saveSettings();
+  return publicState();
+});
+ipcMain.handle("settings:api-key:save", (_, apiKey) => {
+  try {
+    saveCompatibleApiKey(apiKey);
+    state.status = String(apiKey || "").trim()
+      ? "兼容 API Key 已加密保存"
+      : "兼容 API Key 已清除";
+  } catch (error) {
+    state.status = error.message;
+  }
+  broadcast();
+  return publicState();
+});
+ipcMain.handle("daily-plan:generate", async (_, sourceTasks) => {
+  ensureDailyPlanCurrent();
+  try {
+    await generateDailyPlan(sourceTasks);
+    broadcast();
+    return { ...publicState(), dailyPlanError: "" };
+  } catch (error) {
+    state.dailyPlan.status = `生成失败：${error.message}`;
+    saveDailyPlan();
+    broadcast();
+    return { ...publicState(), dailyPlanError: error.message };
+  }
+});
+ipcMain.handle("daily-plan:complete", async (_, itemId, evidence) => {
+  ensureDailyPlanCurrent();
+  const item = state.dailyPlan.items.find((entry) => entry.id === String(itemId || ""));
+  if (!item) {
+    return {
+      ...publicState(),
+      dailyPlanReview: { accepted: false, reason: "没有找到这项今日计划。" }
+    };
+  }
+  if (item.completed) {
+    return {
+      ...publicState(),
+      dailyPlanReview: { accepted: false, reason: "此项已经领取过奖励。" }
+    };
+  }
+  try {
+    const review = await reviewDailyPlanEvidence(item, evidence);
+    if (review.accepted) {
+      if (item.completed) {
+        return {
+          ...publicState(),
+          dailyPlanReview: { accepted: false, reason: "此项已经领取过奖励。" }
+        };
+      }
+      item.completed = true;
+      item.completedAt = Date.now();
+      state.dailyPlan.status = `已完成“${item.title}”，荣誉值 +1`;
+      state.rewards = awardDailyPlanItem(state.rewards);
+      saveRewards();
+      saveDailyPlan();
+      void reconcilePenaltyLock();
+    }
+    broadcast();
+    return { ...publicState(), dailyPlanReview: review };
+  } catch (error) {
+    const review = { accepted: false, reason: `审核失败：${error.message}` };
+    return { ...publicState(), dailyPlanReview: review };
+  }
 });
 ipcMain.handle("session:checkin", (_, text) => {
   const note = String(text || "").trim();
@@ -990,7 +2116,17 @@ app.whenReady().then(async () => {
   registeredGameExecutables = await discoverRegisteredGames();
   loadRewards();
   loadSettings();
+  loadCompatibleApiKey();
+  loadDailyPlan();
+  loadEntertainmentLedger();
   loadColdTurkeyRecovery();
+  await restoreEntertainmentGuard();
+  await reconcilePenaltyLock();
+  clearInterval(penaltyLockTimer);
+  penaltyLockTimer = setInterval(() => void reconcilePenaltyLock(), 30 * 1000);
+  clearInterval(dailyPlanTimer);
+  dailyPlanTimer = setInterval(dailyPlanTick, 30 * 1000);
+  dailyPlanTick();
   state.ollama = {
     ...(await getOllamaStatus()),
     status: "检测完成"
@@ -998,17 +2134,19 @@ app.whenReady().then(async () => {
   createWindow();
   globalShortcut.register("CommandOrControl+Shift+F12", () => {
     if (!state.running) return;
-    deductForForcedExit("紧急快捷键强行停止");
-    stopSession("已紧急停止，扣除 3 点");
-    notify("已紧急停止", "本轮扣除 3 点。");
+    forceStopSession("紧急快捷键强行停止", "已紧急停止，扣除 3 点；Cold Turkey 密码已公布");
+    notify("已紧急停止", "本轮扣除 3 点，Cold Turkey 密码已在应用中公布。");
   });
 });
 
 app.on("will-quit", () => {
   allowWindowClose = true;
+  clearInterval(penaltyLockTimer);
+  clearInterval(dailyPlanTimer);
   globalShortcut.unregisterAll();
 });
 app.on("window-all-closed", () => {
+  void stopEntertainment("应用已关闭", { relock: false });
   stopSession();
   if (process.platform !== "darwin") app.quit();
 });

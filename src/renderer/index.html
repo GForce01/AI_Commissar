@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Commissar</title>
+  <title>ОГАС政委</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,8 +11,8 @@
     <header>
       <div>
         <p class="eyebrow">LOCAL FOCUS SUPERVISOR</p>
-        <h1>AI Commissar</h1>
-        <p class="subtitle">看住方向，不接管你的人生。</p>
+        <h1>ОГАС政委</h1>
+        <p class="subtitle">保持警惕，风暴依然作响！</p>
       </div>
       <div id="statusBadge" class="badge">待命</div>
     </header>
@@ -23,19 +23,14 @@
         <label>必须推进什么
           <input id="task" required value="完成当前最重要的工作" maxlength="120">
         </label>
-        <div class="two">
-          <label>专注分钟
-            <input id="duration" type="number" min="5" max="240" value="25">
-          </label>
-          <label>AI 模型
-            <input id="model" value="gpt-5.4-mini">
-          </label>
-        </div>
+        <label>专注分钟
+          <input id="duration" type="number" min="5" max="240" value="25">
+        </label>
         <label>专注关键词
           <textarea id="allowed" rows="3" placeholder="vscode, github, 文档, 项目名"></textarea>
         </label>
         <label>分心关键词
-          <textarea id="blocked" rows="3" placeholder="bilibili, douyin, steam, 小红书"></textarea>
+          <textarea id="blocked" rows="3" placeholder="微信, bilibili, douyin, steam, 小红书"></textarea>
         </label>
         <label class="toggle">
           <input id="autoDetectGames" type="checkbox" checked>
@@ -45,6 +40,37 @@
           <input id="aiEnabled" type="checkbox" checked>
           <span>规则不确定时，先用文字 AI 判断；拿不准再查看屏幕</span>
         </label>
+        <label>屏幕视觉清晰度
+          <select id="visionQuality">
+            <option value="high" selected>高清 · 文字与 HUD 更清楚</option>
+            <option value="standard">标准 · 更快且更省资源</option>
+          </select>
+        </label>
+        <details class="integration">
+          <summary>通用 OpenAI 格式 API</summary>
+          <p class="hint integration-toggle">支持提供 <code>/v1/chat/completions</code> 的服务。视觉功能需要所选模型支持图片输入；语音功能需要服务提供 <code>/v1/audio/speech</code>。</p>
+          <div class="two">
+            <label>服务名称
+              <input id="apiProviderName" value="OpenAI" placeholder="例如 OpenRouter">
+            </label>
+            <label>文字 / 视觉模型
+              <input id="model" value="gpt-5.4-mini" placeholder="填写服务商提供的模型 ID">
+            </label>
+          </div>
+          <label>API Base URL
+            <input id="apiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
+          </label>
+          <label>API Key
+            <input id="compatibleApiKey" type="password" autocomplete="off" placeholder="留空不会覆盖已经保存的 Key">
+          </label>
+          <label>语音模型
+            <input id="ttsModel" value="gpt-4o-mini-tts" placeholder="服务不支持语音时可忽略">
+          </label>
+          <div class="prompt-actions">
+            <button id="saveCompatibleApiKeyButton" class="secondary" type="button">加密保存 Key</button>
+            <button id="clearCompatibleApiKeyButton" class="quiet" type="button">清除 Key</button>
+          </div>
+        </details>
         <details class="integration">
           <summary>本地 Ollama 分流</summary>
           <label class="toggle integration-toggle">
@@ -61,7 +87,7 @@
           </div>
           <label class="toggle">
             <input id="ollamaFallback" type="checkbox" checked>
-            <span>本地模型不可用或调用失败时回退 OpenAI</span>
+            <span>本地模型不可用或调用失败时回退通用兼容 API</span>
           </label>
           <p id="ollamaStatus" class="hint">正在检测 Ollama...</p>
         </details>
@@ -96,6 +122,9 @@
               <option value="echo">Echo · 冷静克制</option>
               <option value="ash">Ash · 干练锐利</option>
             </select>
+          </label>
+          <label>语速
+            <input id="ttsSpeed" type="number" min="0.75" max="1.5" step="0.05" value="1.1">
           </label>
           <button id="previewVoiceButton" class="secondary" type="button">试听</button>
         </div>
@@ -132,11 +161,41 @@
             <strong id="completedSessions">0</strong>
           </div>
         </div>
+        <section class="entertainment-mode">
+          <div class="entertainment-copy">
+            <strong>娱乐模式</strong>
+            <p>可选择是否启用 AI 点评；启用后等待一个间隔再观察，只用语音播报，不弹通知，也不写入近期观察。</p>
+          </div>
+          <div class="entertainment-actions">
+            <label class="toggle entertainment-commentary-toggle">
+              <input id="entertainmentCommentaryEnabled" type="checkbox" checked>
+              <span>启用 AI 点评</span>
+            </label>
+            <label>观察间隔（秒）
+              <input id="entertainmentInterval" type="number" min="15" max="600" step="5" value="60">
+            </label>
+            <label id="entertainmentDurationLabel">使用津贴（分钟）
+              <input id="entertainmentDuration" type="number" min="5" max="240" step="5" value="30">
+            </label>
+            <span id="entertainmentCost" class="entertainment-cost">需要 6 点</span>
+            <button id="startEntertainmentButton" class="secondary" type="button">开启娱乐模式</button>
+            <button id="stopEntertainmentButton" class="danger" type="button">停止娱乐模式</button>
+          </div>
+          <p id="entertainmentAccessStatus" class="entertainment-access-status"></p>
+          <p class="entertainment-rank-hint">工作日津贴随军衔逐级增长；少尉、少校、少将、元帅为重点跃升军衔。</p>
+          <div class="entertainment-guard">
+            <button id="startEntertainmentGuardButton" class="quiet" type="button">开启 24 小时娱乐限制</button>
+            <span id="entertainmentGuardStatus">未开启限制</span>
+          </div>
+        </section>
         <p id="punishmentStatus" class="punishment hidden"></p>
         <section id="coldTurkeyStatus" class="cold-turkey-status">
           <span>Cold Turkey</span>
           <strong id="coldTurkeyStatusText">未启用</strong>
+          <small id="penaltyLockStatus">惩戒营 Games 锁：未启用</small>
           <code id="coldTurkeyPassword" class="hidden"></code>
+          <button id="revealPreviousColdTurkeyPasswordButton" class="quiet hidden" type="button">事故恢复：尝试上一份密码</button>
+          <button id="confirmColdTurkeyUnlockedButton" class="secondary hidden" type="button">我已在 Cold Turkey 中解除</button>
           <button id="recoverColdTurkeyButton" class="quiet hidden" type="button">恢复上次密码（扣 3 点）</button>
         </section>
         <div class="timer" id="timer">00:00</div>
@@ -148,6 +207,7 @@
             <p id="reason">只在专注会话中读取前台窗口。</p>
           </div>
         </div>
+        <p id="aiUsage" class="ai-usage">AI 来源：尚未调用模型</p>
         <div id="checkinBox" class="checkin hidden">
           <label>用一句话报到：接下来具体做什么？
             <input id="checkinText" maxlength="100" placeholder="例如：写完登录接口的测试">
@@ -159,8 +219,33 @@
       </section>
     </section>
 
+    <section class="panel daily-plan">
+      <div class="daily-plan-header">
+        <div>
+          <p class="eyebrow">DAILY ORDERS</p>
+          <h2>每日计划</h2>
+          <p id="dailyPlanStatus" class="hint">今天尚未生成计划</p>
+        </div>
+        <div class="daily-reminder">
+          <label class="toggle">
+            <input id="dailyPlanReminderEnabled" type="checkbox">
+            <span>每天提醒</span>
+          </label>
+          <input id="dailyPlanReminderTime" type="time" value="09:00" aria-label="每日计划提醒时间">
+        </div>
+      </div>
+      <label>写下今天要做的事情
+        <textarea id="dailyPlanInput" rows="4" maxlength="4000" placeholder="可以直接写一串任务、截止时间和优先级，AI 会整理成可执行计划。"></textarea>
+      </label>
+      <div class="daily-plan-actions">
+        <button id="generateDailyPlanButton" class="primary" type="button">AI 生成今日计划</button>
+        <span>计划每天自动清零；每项证据审核通过奖励 1 荣誉值。</span>
+      </div>
+      <ol id="dailyPlanItems" class="daily-plan-items"></ol>
+    </section>
+
     <section class="privacy">
-      <strong>隐私边界：</strong>默认仅读取前台窗口标题和进程名。开启 AI 后，截图只在内存中发送给 OpenAI，
+      <strong>隐私边界：</strong>默认仅读取前台窗口标题和进程名。专注模式开启 AI，或娱乐模式启用 AI 点评后，截图只在内存中发送给所选视觉模型，
       本地日志不保存截图。它只应监督你自己的电脑。
     </section>
   </main>
@@ -175,6 +260,19 @@
         <button id="submitEvidenceButton" class="primary" type="button">提交证据</button>
         <button id="cancelStopButton" class="secondary" type="button">继续执行</button>
         <button id="forceStopButton" class="danger" type="button">强行停止并扣 3 点</button>
+      </div>
+    </section>
+  </div>
+  <div id="dailyPlanEvidenceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dailyPlanEvidenceTitle">
+    <section class="modal-card">
+      <p class="eyebrow">每日计划验收</p>
+      <h2 id="dailyPlanEvidenceTitle">提交完成证据</h2>
+      <p id="dailyPlanEvidenceTask" class="modal-copy"></p>
+      <textarea id="dailyPlanEvidence" rows="6" maxlength="1500" placeholder="说明完成成果、文件或链接位置，以及如何确认已经完成。"></textarea>
+      <p id="dailyPlanReviewMessage" class="review-message"></p>
+      <div class="modal-actions">
+        <button id="submitDailyPlanEvidenceButton" class="primary" type="button">提交证据</button>
+        <button id="cancelDailyPlanEvidenceButton" class="secondary" type="button">取消</button>
       </div>
     </section>
   </div>
