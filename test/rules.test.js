@@ -369,6 +369,8 @@ test("saved preferences are normalized for restart restoration", () => {
     dailyPlanReminderTime: "08:30",
     apiProviderName: "  OpenRouter  ",
     apiBaseUrl: "https://openrouter.ai/api/v1/",
+    textModel: " text-only ",
+    visionModel: " vision-only ",
     ttsModel: " custom-tts ",
     coldTurkeyBlockName: "  Focus Block  ",
     coldTurkeyPenaltyBlockName: "  Punishment Block  "
@@ -384,11 +386,16 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(preferences.dailyPlanReminderTime, "08:30");
   assert.equal(preferences.apiProviderName, "OpenRouter");
   assert.equal(preferences.apiBaseUrl, "https://openrouter.ai/api/v1");
+  assert.equal(preferences.textModel, "text-only");
+  assert.equal(preferences.visionModel, "vision-only");
+  assert.equal(preferences.aiModel, "text-only");
   assert.equal(preferences.ttsModel, "custom-tts");
   assert.equal(preferences.coldTurkeyBlockName, "Focus Block");
   assert.equal(preferences.coldTurkeyPenaltyBlockName, "Punishment Block");
   assert.equal(normalizePreferences({ dailyPlanReminderTime: "29:90" }).dailyPlanReminderTime, "09:00");
   assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
+  assert.equal(normalizePreferences({ aiModel: "legacy-model" }).visionModel, "legacy-model");
+  assert.equal(normalizePreferences({ ttsModel: "   " }).ttsModel, "");
 });
 
 test("entertainment time costs one point per five minutes without punishment", () => {
@@ -476,7 +483,9 @@ test("entertainment model settings are normalized independently", () => {
     ollamaEnabled: 1,
     ollamaVisionModel: "  qwen3-vl:8b  ",
     ollamaFallbackToOpenAi: false,
-    aiModel: " custom-vision ",
+    textModel: " custom-text ",
+    visionModel: " custom-vision ",
+    ttsModel: "",
     visionQuality: "standard",
     ttsVoice: "echo",
     ttsSpeed: 1.25,
@@ -486,7 +495,10 @@ test("entertainment model settings are normalized independently", () => {
     ollamaEnabled: true,
     ollamaVisionModel: "qwen3-vl:8b",
     ollamaFallbackToOpenAi: false,
-    aiModel: "custom-vision",
+    textModel: "custom-text",
+    visionModel: "custom-vision",
+    aiModel: "custom-text",
+    ttsModel: "",
     visionQuality: "standard",
     ttsVoice: "echo",
     ttsSpeed: 1.25,

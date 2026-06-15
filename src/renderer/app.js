@@ -2,7 +2,9 @@ const elements = {
   form: document.querySelector("#sessionForm"),
   task: document.querySelector("#task"),
   duration: document.querySelector("#duration"),
-  model: document.querySelector("#model"),
+  textModel: document.querySelector("#textModel"),
+  visionModel: document.querySelector("#visionModel"),
+  copyTextModelToVision: document.querySelector("#copyTextModelToVisionButton"),
   allowed: document.querySelector("#allowed"),
   blocked: document.querySelector("#blocked"),
   autoDetectGames: document.querySelector("#autoDetectGames"),
@@ -127,7 +129,9 @@ function collectPreferences() {
   return {
     task: elements.task.value,
     durationMinutes: elements.duration.value,
-    aiModel: elements.model.value,
+    textModel: elements.textModel.value,
+    visionModel: elements.visionModel.value,
+    aiModel: elements.textModel.value,
     apiProviderName: elements.apiProviderName.value,
     apiBaseUrl: elements.apiBaseUrl.value,
     ttsModel: elements.ttsModel.value,
@@ -159,10 +163,11 @@ function collectPreferences() {
 function hydratePreferences(preferences = {}) {
   elements.task.value = preferences.task ?? elements.task.value;
   elements.duration.value = preferences.durationMinutes ?? elements.duration.value;
-  elements.model.value = preferences.aiModel ?? elements.model.value;
+  elements.textModel.value = preferences.textModel || preferences.aiModel || elements.textModel.value;
+  elements.visionModel.value = preferences.visionModel || preferences.aiModel || elements.textModel.value;
   elements.apiProviderName.value = preferences.apiProviderName || "OpenAI";
   elements.apiBaseUrl.value = preferences.apiBaseUrl || "https://api.openai.com/v1";
-  elements.ttsModel.value = preferences.ttsModel || "gpt-4o-mini-tts";
+  elements.ttsModel.value = preferences.ttsModel || "";
   elements.allowed.value = preferences.allowedKeywords ?? "";
   elements.blocked.value = preferences.blockedKeywords ?? "";
   elements.autoDetectGames.checked = preferences.autoDetectGames !== false;
@@ -331,10 +336,18 @@ function render(state) {
   elements.ollamaTextModel.disabled = state.running || entertainmentActive;
   elements.ollamaVisionModel.disabled = state.running || entertainmentActive;
   elements.ollamaFallback.disabled = state.running || entertainmentActive;
-  elements.model.disabled = state.running || entertainmentActive;
+  elements.textModel.disabled = state.running || entertainmentActive;
+  elements.visionModel.disabled = state.running || entertainmentActive;
+  elements.copyTextModelToVision.disabled = state.running || entertainmentActive;
   elements.apiProviderName.disabled = state.running || entertainmentActive;
   elements.apiBaseUrl.disabled = state.running || entertainmentActive;
   elements.ttsModel.disabled = state.running || entertainmentActive;
+  const ttsAvailable = Boolean(elements.ttsModel.value.trim());
+  if (!ttsAvailable && !state.running && !entertainmentActive) elements.voiceEnabled.checked = false;
+  elements.voiceEnabled.disabled = !ttsAvailable || state.running || entertainmentActive;
+  elements.ttsVoice.disabled = !ttsAvailable || state.running || entertainmentActive;
+  elements.ttsSpeed.disabled = !ttsAvailable || state.running || entertainmentActive;
+  elements.previewVoice.disabled = !ttsAvailable || state.running || entertainmentActive;
   elements.visionQuality.disabled = state.running || entertainmentActive;
   elements.aiEnabled.disabled = (!state.apiKeyAvailable && !state.ollama?.available) || state.running || entertainmentActive;
 
@@ -419,7 +432,10 @@ elements.form.addEventListener("submit", async (event) => {
   render(await window.commissar.start({
     task: elements.task.value,
     durationMinutes: elements.duration.value,
-    aiModel: elements.model.value,
+    textModel: elements.textModel.value,
+    visionModel: elements.visionModel.value,
+    aiModel: elements.textModel.value,
+    ttsModel: elements.ttsModel.value,
     allowedKeywords: elements.allowed.value,
     blockedKeywords: elements.blocked.value,
     autoDetectGames: elements.autoDetectGames.checked,
@@ -444,7 +460,10 @@ elements.startEntertainment.addEventListener("click", async () => {
   clearTimeout(preferencesSaveTimer);
   await window.commissar.savePreferences(collectPreferences());
   render(await window.commissar.startEntertainment({
-    aiModel: elements.model.value,
+    textModel: elements.textModel.value,
+    visionModel: elements.visionModel.value,
+    aiModel: elements.textModel.value,
+    ttsModel: elements.ttsModel.value,
     visionQuality: elements.visionQuality.value,
     ollamaEnabled: elements.ollamaEnabled.checked,
     ollamaVisionModel: elements.ollamaVisionModel.value,
@@ -467,11 +486,16 @@ elements.startEntertainmentGuard.addEventListener("click", async () => {
 elements.entertainmentDuration.addEventListener("input", () => {
   window.commissar.getState().then(render);
 });
+elements.copyTextModelToVision.addEventListener("click", () => {
+  elements.visionModel.value = elements.textModel.value;
+  schedulePreferencesSave();
+});
 
 [
   elements.task,
   elements.duration,
-  elements.model,
+  elements.textModel,
+  elements.visionModel,
   elements.apiProviderName,
   elements.apiBaseUrl,
   elements.ttsModel,
@@ -530,7 +554,8 @@ elements.previewVoice.addEventListener("click", async () => {
   elements.previewVoice.textContent = "正在发声...";
   render(await window.commissar.previewVoice({
     voice: elements.ttsVoice.value,
-    speed: elements.ttsSpeed.value
+    speed: elements.ttsSpeed.value,
+    ttsModel: elements.ttsModel.value
   }));
   elements.previewVoice.disabled = false;
   elements.previewVoice.textContent = "试听";

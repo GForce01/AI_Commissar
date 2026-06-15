@@ -21,6 +21,9 @@ label { display: block; color: #4f5962; font-size: 13px; font-weight: 650; margi
 input, textarea, select { display: block; width: 100%; margin-top: 7px; border: 1px solid #c8c0ae; border-radius: 9px; padding: 11px 12px; background: #fffefa; color: #17212b; font: inherit; resize: vertical; }
 input:focus, textarea:focus, select:focus { outline: 2px solid #c36b47; border-color: transparent; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.input-with-button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 7px; }
+.input-with-button input { margin-top: 0; }
+.input-with-button button { white-space: nowrap; }
 .toggle { display: flex; align-items: flex-start; gap: 9px; line-height: 1.45; }
 .toggle input { width: auto; margin: 3px 0 0; }
 .commentary-settings { display: grid; grid-template-columns: 1fr 110px; align-items: start; gap: 10px; }

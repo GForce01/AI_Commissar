@@ -35,10 +35,11 @@ npm.cmd start
 - 服务名称，例如 `OpenAI`、`OpenRouter` 或你的转发服务名称
 - API Base URL，例如 `https://api.openai.com/v1`
 - API Key
-- 文字 / 视觉模型
-- 可选语音模型
+- 文字模型
+- 视觉模型
+- 可选语音模型；留空会停用 AI 语音
 
-API Key 保存后会使用 Electron 系统安全存储加密，并立即从输入框清空。它不会写入 `settings.json`，也不会提交到仓库。
+视觉模型旁边的“同文字模型”按钮可以一键复制文字模型名称。API Key 保存后会使用 Electron 系统安全存储加密，并立即从输入框清空。它不会写入 `settings.json`，也不会提交到仓库。
 
 ## 使用本地 Ollama
 

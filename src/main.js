@@ -730,13 +730,19 @@ function saveSettings() {
 
 function getCompatibleApiConfig(config = state.config || state.settings.preferences) {
   const preferences = state.settings.preferences;
+  const textModel = String(
+    config?.textModel || config?.aiModel || preferences.textModel || preferences.aiModel || "gpt-5.4-mini"
+  ).trim();
   return {
     providerName: String(config?.apiProviderName || preferences.apiProviderName || "OpenAI").trim(),
     baseUrl: normalizeApiBaseUrl(
       config?.apiBaseUrl || preferences.apiBaseUrl
     ),
-    textModel: String(config?.aiModel || preferences.aiModel || "gpt-5.4-mini").trim(),
-    ttsModel: String(config?.ttsModel || preferences.ttsModel || "gpt-4o-mini-tts").trim()
+    textModel,
+    visionModel: String(
+      config?.visionModel || config?.aiModel || preferences.visionModel || preferences.aiModel || textModel
+    ).trim(),
+    ttsModel: String(config?.ttsModel ?? preferences.ttsModel ?? "").trim()
   };
 }
 
@@ -1046,6 +1052,8 @@ async function requestAiClassification(
     ? convertedContent.map((item) => item.text || "").join("\n")
     : convertedContent;
   const endpoint = compatibleEndpoint(api.baseUrl, "chat/completions");
+  const model = modality === "vision" ? api.visionModel : api.textModel;
+  if (!model) throw new Error(`${modality === "vision" ? "视觉" : "文字"}模型未配置`);
   const request = async (tokenParameter) => fetch(endpoint, {
     method: "POST",
     headers: {
@@ -1053,7 +1061,7 @@ async function requestAiClassification(
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: api.textModel,
+      model,
       ...completionTokenBody(maxOutputTokens, tokenParameter),
       messages: [{ role: "user", content: messageContent }]
     })
@@ -1085,7 +1093,7 @@ async function requestAiClassification(
 
   const text = extractChatCompletionText(await response.json()).trim();
   if (!text) throw new Error(`${api.providerName} 返回了空响应`);
-  recordAiUsage("content", api.providerName, api.textModel, { fallback });
+  recordAiUsage("content", api.providerName, model, { fallback });
   state.aiUsage.content.modality = modality;
   return text;
 }
@@ -1531,6 +1539,7 @@ function playWav(filePath) {
 async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
   const normalizedSpeed = normalizeTtsSpeed(speed);
   const api = getCompatibleApiConfig();
+  if (!api.ttsModel) return;
   const cacheDir = path.join(app.getPath("userData"), "voice-cache");
   fs.mkdirSync(cacheDir, { recursive: true });
   const personalityPrompt = state.settings.personalityPrompt;
@@ -1571,11 +1580,7 @@ async function speakCommissar(text) {
   const voice = state.config?.ttsVoice || "onyx";
   const speed = state.config?.ttsSpeed;
   const speechTask = speechQueue.then(async () => {
-    if (!getCompatibleApiKey()) {
-      state.status = "语音提醒需要兼容 API Key";
-      broadcast();
-      return;
-    }
+    if (!getCompatibleApiKey() || !getCompatibleApiConfig().ttsModel) return;
     await speakWithOpenAi(text, voice, speed);
   }).catch((error) => {
     state.status = `AI 语音暂不可用：${error.message}`;
@@ -1829,7 +1834,10 @@ ipcMain.handle("session:start", async (_, config) => {
       visionQuality: normalizeVisionQuality(config.visionQuality),
       ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
       ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
-      aiModel: config.aiModel || "gpt-5.4-mini"
+      textModel: config.textModel || config.aiModel || "gpt-5.4-mini",
+      visionModel: config.visionModel || config.aiModel || config.textModel || "gpt-5.4-mini",
+      aiModel: config.textModel || config.aiModel || "gpt-5.4-mini",
+      ttsModel: String(config.ttsModel || "").trim()
     },
     status: config.coldTurkeyEnabled && !coldTurkeyReady
       ? "专注会话已开始；未检测到可用 Cold Turkey，已跳过密码锁"
@@ -2075,7 +2083,8 @@ ipcMain.handle("voice:preview", async (_, options = {}) => {
   state.config = {
     ...(state.config || {}),
     ttsVoice: selectedVoice,
-    ttsSpeed: normalizeTtsSpeed(options.speed)
+    ttsSpeed: normalizeTtsSpeed(options.speed),
+    ttsModel: String(options.ttsModel ?? state.settings.preferences.ttsModel ?? "").trim()
   };
   await speakCommissar(await generateCommissarLine());
   if (previousVoice) state.config.ttsVoice = previousVoice;

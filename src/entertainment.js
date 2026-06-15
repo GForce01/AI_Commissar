@@ -20,9 +20,12 @@ function normalizeEntertainmentConfig(config = {}) {
     ollamaEnabled: Boolean(config.ollamaEnabled),
     ollamaVisionModel: String(config.ollamaVisionModel || "qwen3-vl:8b").trim(),
     ollamaFallbackToOpenAi: config.ollamaFallbackToOpenAi !== false,
-    aiModel: String(config.aiModel || "gpt-5.4-mini").trim(),
+    textModel: String(config.textModel || config.aiModel || "gpt-5.4-mini").trim(),
+    visionModel: String(config.visionModel || config.aiModel || config.textModel || "gpt-5.4-mini").trim(),
+    aiModel: String(config.textModel || config.aiModel || "gpt-5.4-mini").trim(),
     visionQuality: normalizeVisionQuality(config.visionQuality),
     ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
+    ttsModel: String(config.ttsModel || "").trim(),
     ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
     intervalSeconds: Math.max(
       MIN_ENTERTAINMENT_INTERVAL_SECONDS,

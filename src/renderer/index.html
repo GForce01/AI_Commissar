@@ -48,15 +48,21 @@
         </label>
         <details class="integration">
           <summary>通用 OpenAI 格式 API</summary>
-          <p class="hint integration-toggle">支持提供 <code>/v1/chat/completions</code> 的服务。视觉功能需要所选模型支持图片输入；语音功能需要服务提供 <code>/v1/audio/speech</code>。</p>
+          <p class="hint integration-toggle">支持提供 <code>/v1/chat/completions</code> 的服务。文字、视觉和语音可使用不同模型；语音模型留空则停用 AI 语音。</p>
           <div class="two">
             <label>服务名称
               <input id="apiProviderName" value="OpenAI" placeholder="例如 OpenRouter">
             </label>
-            <label>文字 / 视觉模型
-              <input id="model" value="gpt-5.4-mini" placeholder="填写服务商提供的模型 ID">
+            <label>文字模型
+              <input id="textModel" value="gpt-5.4-mini" placeholder="用于文字判断、计划和证据审核">
             </label>
           </div>
+          <label>视觉模型
+            <span class="input-with-button">
+              <input id="visionModel" value="gpt-5.4-mini" placeholder="用于截图判断和视觉证据审核">
+              <button id="copyTextModelToVisionButton" class="secondary" type="button">同文字模型</button>
+            </span>
+          </label>
           <label>API Base URL
             <input id="apiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
           </label>
@@ -64,7 +70,7 @@
             <input id="compatibleApiKey" type="password" autocomplete="off" placeholder="留空不会覆盖已经保存的 Key">
           </label>
           <label>语音模型
-            <input id="ttsModel" value="gpt-4o-mini-tts" placeholder="服务不支持语音时可忽略">
+            <input id="ttsModel" value="" placeholder="留空则停用 AI 语音">
           </label>
           <div class="prompt-actions">
             <button id="saveCompatibleApiKeyButton" class="secondary" type="button">加密保存 Key</button>

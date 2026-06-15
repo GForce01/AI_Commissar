@@ -1,10 +1,11 @@
 const DEFAULT_PREFERENCES = {
   task: "完成当前最重要的工作",
   durationMinutes: 25,
-  aiModel: "gpt-5.4-mini",
+  textModel: "gpt-5.4-mini",
+  visionModel: "gpt-5.4-mini",
   apiProviderName: "OpenAI",
   apiBaseUrl: "https://api.openai.com/v1",
-  ttsModel: "gpt-4o-mini-tts",
+  ttsModel: "",
   allowedKeywords: "",
   blockedKeywords: "",
   autoDetectGames: true,
@@ -49,10 +50,18 @@ function normalizePreferences(saved = {}) {
   return {
     task: String(saved.task || DEFAULT_PREFERENCES.task).trim().slice(0, 120),
     durationMinutes: clampNumber(saved.durationMinutes, 5, 240, 25),
-    aiModel: String(saved.aiModel || DEFAULT_PREFERENCES.aiModel).trim(),
+    textModel: String(
+      saved.textModel || saved.aiModel || DEFAULT_PREFERENCES.textModel
+    ).trim().slice(0, 120),
+    visionModel: String(
+      saved.visionModel || saved.aiModel || DEFAULT_PREFERENCES.visionModel
+    ).trim().slice(0, 120),
+    aiModel: String(
+      saved.textModel || saved.aiModel || DEFAULT_PREFERENCES.textModel
+    ).trim().slice(0, 120),
     apiProviderName: String(saved.apiProviderName || DEFAULT_PREFERENCES.apiProviderName).trim().slice(0, 60),
     apiBaseUrl: normalizeApiBaseUrl(saved.apiBaseUrl).slice(0, 500),
-    ttsModel: String(saved.ttsModel || DEFAULT_PREFERENCES.ttsModel).trim().slice(0, 120),
+    ttsModel: String(saved.ttsModel || "").trim().slice(0, 120),
     allowedKeywords: String(saved.allowedKeywords || ""),
     blockedKeywords: String(saved.blockedKeywords || ""),
     autoDetectGames: saved.autoDetectGames !== false,
