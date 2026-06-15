@@ -19,6 +19,7 @@ const DEFAULT_PREFERENCES = {
   commentaryIntervalMinutes: 10,
   coldTurkeyEnabled: false,
   coldTurkeyBlockName: "AI Commissar",
+  coldTurkeyPenaltyBlockName: "Games",
   ttsVoice: "onyx",
   ttsSpeed: 1.1,
   entertainmentCommentaryEnabled: true,
@@ -31,6 +32,11 @@ const DEFAULT_PREFERENCES = {
 function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+}
+
+function normalizeBlockName(value, fallback) {
+  const name = String(value || "").trim().slice(0, 80);
+  return name || fallback;
 }
 
 function normalizePreferences(saved = {}) {
@@ -60,7 +66,14 @@ function normalizePreferences(saved = {}) {
     commentaryEnabled: saved.commentaryEnabled !== false,
     commentaryIntervalMinutes: clampNumber(saved.commentaryIntervalMinutes, 3, 60, 10),
     coldTurkeyEnabled: Boolean(saved.coldTurkeyEnabled),
-    coldTurkeyBlockName: String(saved.coldTurkeyBlockName || DEFAULT_PREFERENCES.coldTurkeyBlockName).trim().slice(0, 80),
+    coldTurkeyBlockName: normalizeBlockName(
+      saved.coldTurkeyBlockName,
+      DEFAULT_PREFERENCES.coldTurkeyBlockName
+    ),
+    coldTurkeyPenaltyBlockName: normalizeBlockName(
+      saved.coldTurkeyPenaltyBlockName,
+      DEFAULT_PREFERENCES.coldTurkeyPenaltyBlockName
+    ),
     ttsVoice: ["onyx", "echo", "ash"].includes(saved.ttsVoice) ? saved.ttsVoice : "onyx",
     ttsSpeed: clampNumber(saved.ttsSpeed, 0.75, 1.5, 1.1),
     entertainmentCommentaryEnabled: saved.entertainmentCommentaryEnabled !== false,

@@ -110,8 +110,11 @@
             <input id="coldTurkeyEnabled" type="checkbox">
             <span>开始专注时用随机密码锁定 Cold Turkey</span>
           </label>
-          <label>Block 名称
+          <label>常规 / 娱乐限制 Block 名称
             <input id="coldTurkeyBlockName" value="AI Commissar" maxlength="80">
+          </label>
+          <label>惩戒营 Block 名称
+            <input id="coldTurkeyPenaltyBlockName" value="Games" maxlength="80">
           </label>
           <p class="hint">需要 Cold Turkey Pro 的密码锁功能。密码只在任务完成或证据通过后显示。</p>
         </details>
@@ -192,7 +195,7 @@
         <section id="coldTurkeyStatus" class="cold-turkey-status">
           <span>Cold Turkey</span>
           <strong id="coldTurkeyStatusText">未启用</strong>
-          <small id="penaltyLockStatus">惩戒营 Games 锁：未启用</small>
+          <small id="penaltyLockStatus">惩戒营 Block 锁：未启用</small>
           <code id="coldTurkeyPassword" class="hidden"></code>
           <button id="revealPreviousColdTurkeyPasswordButton" class="quiet hidden" type="button">事故恢复：尝试上一份密码</button>
           <button id="confirmColdTurkeyUnlockedButton" class="secondary hidden" type="button">我已在 Cold Turkey 中解除</button>

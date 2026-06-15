@@ -422,8 +422,9 @@ function loadColdTurkeyRecovery() {
     || fs.existsSync(coldTurkeySessionPath("guard"))
   );
   state.coldTurkey.penaltyActive = fs.existsSync(coldTurkeySessionPath("penalty"));
+  state.coldTurkey.penaltyBlockName = penaltyBlockName();
   state.coldTurkey.penaltyStatus = state.coldTurkey.penaltyActive
-    ? "惩戒营 Games 锁已启用"
+    ? `惩戒营 ${activePenaltyBlockName()} 锁已启用`
     : "未启用";
   if (!focusSecret) {
     previousFocusPasswordCandidate = findOrphanedFocusPasswordCandidate();
@@ -452,6 +453,25 @@ function loadColdTurkeyRecovery() {
       state.coldTurkey.status = "Cold Turkey 恢复信息损坏";
     }
   }
+}
+
+function penaltyBlockName() {
+  try {
+    return validateBlockName(state.settings?.preferences?.coldTurkeyPenaltyBlockName || "Games");
+  } catch {
+    return "Games";
+  }
+}
+
+function activePenaltyBlockName() {
+  try {
+    if (fs.existsSync(coldTurkeySessionPath("penalty"))) {
+      return readColdTurkeySecret("penalty").blockName;
+    }
+  } catch {
+    // Fall back to the configured penalty block if the secret is not readable.
+  }
+  return penaltyBlockName();
 }
 
 async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
@@ -487,7 +507,8 @@ async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
   }
   if (purpose === "penalty") {
     state.coldTurkey.penaltyActive = true;
-    state.coldTurkey.penaltyStatus = `Games 已因惩戒营锁定${vaultWarning}`;
+    state.coldTurkey.penaltyBlockName = name;
+    state.coldTurkey.penaltyStatus = `${name} 已因惩戒营锁定${vaultWarning}`;
   } else {
     state.coldTurkey = {
       ...state.coldTurkey,
@@ -513,14 +534,16 @@ async function getColdTurkeyBlockStatus(blockName) {
 }
 
 async function rotatePenaltyLock() {
+  const name = activePenaltyBlockName();
   clearColdTurkeySecret("penalty");
-  await startColdTurkeyPasswordLock("Games", "penalty");
-  const status = await getColdTurkeyBlockStatus("Games");
+  await startColdTurkeyPasswordLock(name, "penalty");
+  const status = await getColdTurkeyBlockStatus(name);
   if (status !== "enabled") {
-    throw new Error("已发送新密码锁定命令，但 Games 尚未报告 Enabled");
+    throw new Error(`已发送新密码锁定命令，但 ${name} 尚未报告 Enabled`);
   }
   state.coldTurkey.penaltyLastCheckedAt = Date.now();
-  state.coldTurkey.penaltyStatus = "巡检发现锁已失效，已更换密码并重新锁定 Games";
+  state.coldTurkey.penaltyBlockName = name;
+  state.coldTurkey.penaltyStatus = `巡检发现锁已失效，已更换密码并重新锁定 ${name}`;
 }
 
 async function reassertPenaltyLock() {
@@ -531,8 +554,9 @@ async function reassertPenaltyLock() {
     { windowsHide: true, timeout: 15000 }
   );
   state.coldTurkey.penaltyActive = true;
+  state.coldTurkey.penaltyBlockName = secret.blockName;
   state.coldTurkey.penaltyLastCheckedAt = Date.now();
-  state.coldTurkey.penaltyStatus = "状态查询无输出，已使用当前密码重新发送 Games 锁定命令";
+  state.coldTurkey.penaltyStatus = `状态查询无输出，已使用当前密码重新发送 ${secret.blockName} 锁定命令`;
 }
 
 function revealColdTurkeyPassword(status, expectedPurpose) {
@@ -888,35 +912,37 @@ async function reconcilePenaltyLock() {
   try {
     const inPenalty = normalizeRewards(state.rewards).rank === "惩戒营";
     const hasPenaltySecret = fs.existsSync(coldTurkeySessionPath("penalty"));
+    const blockName = activePenaltyBlockName();
+    state.coldTurkey.penaltyBlockName = blockName;
     if (inPenalty && !hasPenaltySecret) {
-      await startColdTurkeyPasswordLock("Games", "penalty");
-      const status = await getColdTurkeyBlockStatus("Games");
+      await startColdTurkeyPasswordLock(blockName, "penalty");
+      const status = await getColdTurkeyBlockStatus(blockName);
       if (status !== "enabled") {
-        throw new Error("Games 锁定命令已发送，但状态尚未生效");
+        throw new Error(`${blockName} 锁定命令已发送，但状态尚未生效`);
       }
       state.coldTurkey.penaltyLastCheckedAt = Date.now();
-      state.status = "已进入惩戒营，Cold Turkey Games 已单独锁定";
+      state.status = `已进入惩戒营，Cold Turkey ${blockName} 已单独锁定`;
     } else if (inPenalty && hasPenaltySecret) {
-      const status = await getColdTurkeyBlockStatus("Games");
+      const status = await getColdTurkeyBlockStatus(blockName);
       state.coldTurkey.penaltyLastCheckedAt = Date.now();
       if (status === "disabled") {
         await rotatePenaltyLock();
-        state.status = "惩戒营巡检发现 Games 锁失效，已自动更换密码并重新锁定";
+        state.status = `惩戒营巡检发现 ${blockName} 锁失效，已自动更换密码并重新锁定`;
       } else if (status === "enabled") {
         state.coldTurkey.penaltyActive = true;
-        state.coldTurkey.penaltyStatus = "Games 锁巡检正常";
+        state.coldTurkey.penaltyStatus = `${blockName} 锁巡检正常`;
       } else {
         await reassertPenaltyLock();
       }
     } else if (!inPenalty && hasPenaltySecret) {
       const password = revealColdTurkeyPassword(
-        "已恢复正常身份，Games 解锁密码已公布",
+        `已恢复正常身份，${blockName} 解锁密码已公布`,
         "penalty"
       );
-      if (password) state.status = "已恢复正常身份，Games 解锁密码已公布";
+      if (password) state.status = `已恢复正常身份，${blockName} 解锁密码已公布`;
     }
   } catch (error) {
-    state.coldTurkey.penaltyStatus = `惩戒营 Games 锁同步失败：${error.message}`;
+    state.coldTurkey.penaltyStatus = `惩戒营 ${activePenaltyBlockName()} 锁同步失败：${error.message}`;
   } finally {
     penaltyLockReconcileInFlight = false;
     broadcast();
@@ -1948,11 +1974,12 @@ ipcMain.handle("entertainment:stop", async () => {
 
 ipcMain.handle("entertainment:guard:start", async (_, blockName) => {
   const requestedBlockName = String(blockName || "AI Commissar").trim();
+  const penaltyBlock = activePenaltyBlockName();
   if (
     normalizeRewards(state.rewards).rank === "惩戒营"
-    && requestedBlockName.toLowerCase() === "games"
+    && requestedBlockName.toLowerCase() === penaltyBlock.toLowerCase()
   ) {
-    state.status = "惩戒营正在使用 Games 锁，请为 24 小时娱乐限制选择另一个 Cold Turkey Block";
+    state.status = `惩戒营正在使用 ${penaltyBlock} 锁，请为 24 小时娱乐限制选择另一个 Cold Turkey Block`;
     broadcast();
     return publicState();
   }

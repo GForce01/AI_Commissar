@@ -369,7 +369,9 @@ test("saved preferences are normalized for restart restoration", () => {
     dailyPlanReminderTime: "08:30",
     apiProviderName: "  OpenRouter  ",
     apiBaseUrl: "https://openrouter.ai/api/v1/",
-    ttsModel: " custom-tts "
+    ttsModel: " custom-tts ",
+    coldTurkeyBlockName: "  Focus Block  ",
+    coldTurkeyPenaltyBlockName: "  Punishment Block  "
   });
   assert.equal(preferences.task, "写完报告");
   assert.equal(preferences.durationMinutes, 240);
@@ -383,7 +385,10 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(preferences.apiProviderName, "OpenRouter");
   assert.equal(preferences.apiBaseUrl, "https://openrouter.ai/api/v1");
   assert.equal(preferences.ttsModel, "custom-tts");
+  assert.equal(preferences.coldTurkeyBlockName, "Focus Block");
+  assert.equal(preferences.coldTurkeyPenaltyBlockName, "Punishment Block");
   assert.equal(normalizePreferences({ dailyPlanReminderTime: "29:90" }).dailyPlanReminderTime, "09:00");
+  assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
 });
 
 test("entertainment time costs one point per five minutes without punishment", () => {

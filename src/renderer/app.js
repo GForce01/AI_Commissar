@@ -24,6 +24,7 @@ const elements = {
   commentaryInterval: document.querySelector("#commentaryInterval"),
   coldTurkeyEnabled: document.querySelector("#coldTurkeyEnabled"),
   coldTurkeyBlockName: document.querySelector("#coldTurkeyBlockName"),
+  coldTurkeyPenaltyBlockName: document.querySelector("#coldTurkeyPenaltyBlockName"),
   ttsVoice: document.querySelector("#ttsVoice"),
   ttsSpeed: document.querySelector("#ttsSpeed"),
   previewVoice: document.querySelector("#previewVoiceButton"),
@@ -144,6 +145,7 @@ function collectPreferences() {
     commentaryIntervalMinutes: elements.commentaryInterval.value,
     coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
     coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
+    coldTurkeyPenaltyBlockName: elements.coldTurkeyPenaltyBlockName.value,
     ttsVoice: elements.ttsVoice.value,
     ttsSpeed: elements.ttsSpeed.value,
     entertainmentCommentaryEnabled: elements.entertainmentCommentaryEnabled.checked,
@@ -175,6 +177,7 @@ function hydratePreferences(preferences = {}) {
   elements.commentaryInterval.value = preferences.commentaryIntervalMinutes ?? 10;
   elements.coldTurkeyEnabled.checked = Boolean(preferences.coldTurkeyEnabled);
   elements.coldTurkeyBlockName.value = preferences.coldTurkeyBlockName || "AI Commissar";
+  elements.coldTurkeyPenaltyBlockName.value = preferences.coldTurkeyPenaltyBlockName || "Games";
   elements.ttsVoice.value = preferences.ttsVoice || "onyx";
   elements.ttsSpeed.value = preferences.ttsSpeed ?? 1.1;
   elements.entertainmentCommentaryEnabled.checked = preferences.entertainmentCommentaryEnabled !== false;
@@ -282,7 +285,10 @@ function render(state) {
     ? ` · 应用将在 ${new Date(focusEndsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 公布密码`
     : "";
   elements.coldTurkeyStatusText.textContent = `${state.coldTurkey?.status || "未启用"}${focusTime}`;
-  elements.penaltyLockStatus.textContent = `惩戒营 Games 锁：${state.coldTurkey?.penaltyStatus || "未启用"}`;
+  const penaltyBlock = state.coldTurkey?.penaltyBlockName
+    || elements.coldTurkeyPenaltyBlockName.value
+    || "Games";
+  elements.penaltyLockStatus.textContent = `惩戒营 ${penaltyBlock} 锁：${state.coldTurkey?.penaltyStatus || "未启用"}`;
   const password = state.coldTurkey?.passwordRevealed || "";
   elements.coldTurkeyPassword.textContent = password ? `解锁密码：${password}` : "";
   elements.coldTurkeyPassword.classList.toggle("hidden", !password);
@@ -299,6 +305,7 @@ function render(state) {
   if (!coldTurkeyReady && !state.running) elements.coldTurkeyEnabled.checked = false;
   elements.coldTurkeyEnabled.disabled = !coldTurkeyReady || state.running || entertainmentActive || guardActive;
   elements.coldTurkeyBlockName.disabled = state.running || entertainmentActive || guardActive;
+  elements.coldTurkeyPenaltyBlockName.disabled = state.running || entertainmentActive;
   const punishmentSeconds = state.rewards?.punishmentRemainingSeconds || 0;
   const inPunishment = state.rewards?.rank === "惩戒营";
   elements.punishmentStatus.classList.toggle("hidden", !inPunishment);
@@ -427,6 +434,7 @@ elements.form.addEventListener("submit", async (event) => {
     commentaryIntervalMinutes: elements.commentaryInterval.value,
     coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
     coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
+    coldTurkeyPenaltyBlockName: elements.coldTurkeyPenaltyBlockName.value,
     ttsVoice: elements.ttsVoice.value,
     ttsSpeed: elements.ttsSpeed.value
   }));
@@ -481,6 +489,7 @@ elements.entertainmentDuration.addEventListener("input", () => {
   elements.commentaryInterval,
   elements.coldTurkeyEnabled,
   elements.coldTurkeyBlockName,
+  elements.coldTurkeyPenaltyBlockName,
   elements.ttsVoice,
   elements.ttsSpeed,
   elements.entertainmentCommentaryEnabled,
