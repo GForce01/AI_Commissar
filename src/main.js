@@ -7,14 +7,15 @@ const {
   ipcMain,
   Notification,
   safeStorage,
-  screen
+  screen,
+  shell
 } = require("electron");
 const { execFile, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { classifyActivity, nextIntervention } = require("./rules");
+const { advanceDistractionWarning, classifyActivity, nextIntervention } = require("./rules");
 const { activityCacheKey, parseAiVerdict, sanitizeCommentary } = require("./ai-classifier");
 const {
   DEFAULT_EXECUTABLE: COLD_TURKEY_EXECUTABLE,
@@ -40,7 +41,8 @@ const {
   emptyDailyPlan,
   localDateKey,
   normalizeDailyPlan,
-  normalizePlanItems
+  normalizePlanItems,
+  parseEvidenceImageDataUrl
 } = require("./daily-plan");
 const { normalizePreferences } = require("./settings");
 const {
@@ -91,6 +93,8 @@ let state = {
   task: "",
   remainingSeconds: 0,
   consecutiveDistracted: 0,
+  distractionWarnings: 0,
+  focusedSinceWarning: 0,
   intervention: "none",
   latest: null,
   history: [],
@@ -1105,28 +1109,31 @@ async function requestTextModel(prompt, { format, maxOutputTokens } = {}) {
   );
 }
 
-async function requestVisionModel(prompt, imageBase64, { format } = {}) {
-  const ollamaRequested = state.config?.ollamaEnabled;
+async function requestVisionModel(prompt, imageBase64, { format, mimeType = "image/jpeg" } = {}) {
+  const modelConfig = (state.running || state.entertainment.active)
+    ? state.config
+    : state.settings.preferences;
+  const ollamaRequested = modelConfig?.ollamaEnabled;
   const useOllama = ollamaRequested
     && state.ollama.available
-    && hasModel(state.ollama, state.config.ollamaVisionModel);
+    && hasModel(state.ollama, modelConfig.ollamaVisionModel);
   if (useOllama) {
     try {
       const text = await ollamaChat({
-        model: state.config.ollamaVisionModel,
+        model: modelConfig.ollamaVisionModel,
         prompt,
         imageBase64,
         format
       });
-      recordAiUsage("content", "Ollama", state.config.ollamaVisionModel);
+      recordAiUsage("content", "Ollama", modelConfig.ollamaVisionModel);
       state.aiUsage.content.modality = "vision";
       return text;
     } catch (error) {
-      if (!state.config.ollamaFallbackToOpenAi) throw error;
+      if (!modelConfig.ollamaFallbackToOpenAi) throw error;
     }
   }
-  if (ollamaRequested && !useOllama && !state.config.ollamaFallbackToOpenAi) {
-    throw new Error(`本地视觉模型 ${state.config.ollamaVisionModel} 不可用`);
+  if (ollamaRequested && !useOllama && !modelConfig.ollamaFallbackToOpenAi) {
+    throw new Error(`本地视觉模型 ${modelConfig.ollamaVisionModel} 不可用`);
   }
   if (!getCompatibleApiKey()) {
     throw new Error("本地视觉模型不可用，且没有配置兼容 API Key");
@@ -1136,8 +1143,8 @@ async function requestVisionModel(prompt, imageBase64, { format } = {}) {
       { type: "input_text", text: prompt },
       {
         type: "input_image",
-        image_url: `data:image/jpeg;base64,${imageBase64}`,
-        detail: state.config?.visionQuality === "standard" ? "low" : "high"
+        image_url: `data:${mimeType};base64,${imageBase64}`,
+        detail: modelConfig?.visionQuality === "standard" ? "low" : "high"
       }
     ],
     { modality: "vision", fallback: Boolean(ollamaRequested) }
@@ -1335,7 +1342,7 @@ async function evaluateCompletionEvidence(evidence) {
     `任务：${state.task}`,
     `剩余时间：${state.remainingSeconds} 秒`,
     `用户证据：${proof}`,
-    "只有证据描述了具体交付物、可核验位置或明确验收结果时才通过。",
+    "只有证据描述了具体交付物、可核验位置或明确完成结果时才通过。",
     "不得因为泛泛声称“做完了”“差不多了”而通过。",
     '只返回 JSON：{"accepted":true|false,"reason":"不超过50字"}。'
   ].join("\n");
@@ -1372,8 +1379,9 @@ async function generateDailyPlan(sourceTasks) {
     `用户${isAppend ? "临时追加" : "今天想做"}的事情：\n${tasks}`,
     isAppend
       ? "只把新增内容整理为 1 至 5 个行动项，不要重复已有计划。"
-      : "将内容整理为 3 至 10 个今天可以完成、边界清晰、可提交证据验收的行动项。",
+      : "将内容整理为 3 至 10 个今天可以完成、边界清晰、可由文字或截图自行证明完成的行动项。",
     "不要擅自加入用户没有要求的大型目标。可以合理排序，并给出简短执行说明和建议时间。",
+    "完成标准必须能由用户自行提交的截图、文件位置、数量、运行结果或笔记证明。",
     '只返回 JSON：{"items":[{"title":"任务名","details":"完成标准","suggestedTime":"建议时段或时长"}]}。'
   ].join("\n");
   const text = await requestTextModel(prompt, {
@@ -1419,30 +1427,38 @@ async function generateDailyPlan(sourceTasks) {
   saveDailyPlan();
 }
 
-async function reviewDailyPlanEvidence(item, evidence) {
+async function reviewDailyPlanEvidence(item, evidence, evidenceImageDataUrl) {
   const proof = String(evidence || "").trim();
-  if (proof.length < 20) {
+  const evidenceImage = parseEvidenceImageDataUrl(evidenceImageDataUrl);
+  if (!evidenceImage && proof.length < 20) {
     return { accepted: false, reason: "证据过于简略，请说明成果、位置或验收结果。" };
   }
   const prompt = [
     "你负责审核一项每日计划是否确实完成。",
     `计划项：${item.title}`,
     `完成标准：${item.details || "未额外说明"}`,
-    `用户证据：${proof}`,
-    "只有证据具体说明了成果、可核验位置、数量或明确验收结果时才通过。",
+    `用户文字证据：${proof || "未提供，请主要审核截图"}`,
+    evidenceImage
+      ? "用户同时提交了一张证据截图。请认真读取截图中的界面、文字、数量、完成状态或成果。"
+      : "用户没有提交截图。",
+    "只有文字或截图能够具体证明成果、可核验位置、数量或明确完成结果时才通过。",
+    "截图与计划项明显无关、内容不可读或无法证明完成时不得通过。",
     '只返回 JSON：{"accepted":true|false,"reason":"不超过50字"}。'
   ].join("\n");
-  const text = await requestTextModel(prompt, {
-    maxOutputTokens: 180,
-    format: {
-      type: "object",
-      properties: {
-        accepted: { type: "boolean" },
-        reason: { type: "string" }
-      },
-      required: ["accepted", "reason"]
-    }
-  });
+  const format = {
+    type: "object",
+    properties: {
+      accepted: { type: "boolean" },
+      reason: { type: "string" }
+    },
+    required: ["accepted", "reason"]
+  };
+  const text = evidenceImage
+    ? await requestVisionModel(prompt, evidenceImage.base64, {
+      format,
+      mimeType: evidenceImage.mimeType
+    })
+    : await requestTextModel(prompt, { maxOutputTokens: 180, format });
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return { accepted: false, reason: "AI 未能读懂证据，请写得更具体。" };
   const parsed = JSON.parse(json);
@@ -1631,33 +1647,34 @@ async function monitorTick() {
     }
   }
 
-  if (result.verdict === "distracted") {
-    if (state.consecutiveDistracted === 0) {
-      sessionDistractionCount += 1;
-      deductForDistraction();
-    }
-    state.consecutiveDistracted += 1;
-  } else if (result.verdict === "focused") {
-    state.consecutiveDistracted = 0;
-  } else {
-    state.consecutiveDistracted = Math.max(0, state.consecutiveDistracted - 1);
-  }
-
+  const warningTransition = advanceDistractionWarning({
+    warningCount: state.distractionWarnings,
+    focusedCount: state.focusedSinceWarning
+  }, result.verdict);
+  state.distractionWarnings = warningTransition.warningCount;
+  state.focusedSinceWarning = warningTransition.focusedCount;
+  state.consecutiveDistracted = warningTransition.warningCount;
   state.intervention = nextIntervention(state.consecutiveDistracted);
   state.latest = { ...activity, ...result, at: new Date().toISOString() };
-  state.status = result.reason;
   addHistory(state.latest);
 
-  if (state.intervention === "nudge" && state.consecutiveDistracted === 1) {
+  if (warningTransition.warned) {
+    state.status = `首次偏离警告：${result.reason}`;
     notify("先回来一下", `你现在的任务是：${state.task}`);
     if (state.config.voiceEnabled) void speakPersonalizedReminder();
+  } else if (warningTransition.penalize) {
+    sessionDistractionCount += 1;
+    const deducted = deductForDistraction();
+    state.status = `第二次偏离，扣除 ${deducted} 点；警告次数已重置：${result.reason}`;
+    notify("再次偏离", `扣除 ${deducted} 点，警告次数已重置。`);
+    if (state.config.voiceEnabled) {
+      void speakCommissar(`再次检测到偏离，扣除 ${deducted} 点。警告次数已重置。`);
+    }
+  } else if (warningTransition.clearedByFocus) {
+    state.status = `连续推进 5 次，偏离警告已清除：${result.reason}`;
+  } else {
+    state.status = result.reason;
   }
-  if (state.intervention === "checkin" && state.consecutiveDistracted === 3) {
-    notify("需要报到", "回到政委窗口，写下你接下来要做的一步。");
-    mainWindow.show();
-    mainWindow.focus();
-  }
-  if (state.intervention === "block") showBlocker();
   broadcast();
 }
 
@@ -1669,6 +1686,8 @@ function stopSession(message = "已停止") {
     running: false,
     remainingSeconds: 0,
     consecutiveDistracted: 0,
+    distractionWarnings: 0,
+    focusedSinceWarning: 0,
     intervention: "none",
     status: message
   };
@@ -1729,15 +1748,20 @@ function createWindow() {
 }
 
 ipcMain.handle("state:get", () => publicState());
+ipcMain.handle("external:winter-supervision:open", async () => {
+  const url = "https://redwatch.top/";
+  await shell.openExternal(url);
+  return { opened: true, url };
+});
 ipcMain.handle("session:start", async (_, config) => {
   if (state.entertainment.active) return publicState();
-  if (state.entertainment.guard.active && config.coldTurkeyEnabled) {
-    state.status = "24 小时娱乐限制已在使用 Cold Turkey，专注会话不能同时创建另一把密码锁";
-    broadcast();
-    return publicState();
-  }
+  const coldTurkeyReady = coldTurkeyAvailable() && safeStorage.isEncryptionAvailable();
+  const wantsColdTurkey = Boolean(config.coldTurkeyEnabled && coldTurkeyReady);
+  const reuseEntertainmentGuardLock = Boolean(
+    state.entertainment.guard.active && wantsColdTurkey
+  );
   const durationMinutes = Math.max(5, Math.min(240, Number(config.durationMinutes) || 25));
-  if (config.coldTurkeyEnabled) {
+  if (wantsColdTurkey && !reuseEntertainmentGuardLock) {
     try {
       await startColdTurkeyPasswordLock(config.coldTurkeyBlockName || "AI Commissar");
     } catch (error) {
@@ -1756,6 +1780,8 @@ ipcMain.handle("session:start", async (_, config) => {
     task: String(config.task || "推进当前任务").trim(),
     remainingSeconds: durationMinutes * 60,
     consecutiveDistracted: 0,
+    distractionWarnings: 0,
+    focusedSinceWarning: 0,
     intervention: "none",
     config: {
       allowedKeywords: config.allowedKeywords || "",
@@ -1779,13 +1805,26 @@ ipcMain.handle("session:start", async (_, config) => {
       ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
       aiModel: config.aiModel || "gpt-5.4-mini"
     },
-    status: "专注会话已开始",
+    status: config.coldTurkeyEnabled && !coldTurkeyReady
+      ? "专注会话已开始；未检测到可用 Cold Turkey，已跳过密码锁"
+      : reuseEntertainmentGuardLock
+      ? "专注会话已开始；沿用 24 小时娱乐限制的 Cold Turkey 锁"
+      : "专注会话已开始",
     history: []
   };
   sessionEndsAt = Date.now() + durationMinutes * 60000;
-  if (config.coldTurkeyEnabled) {
+  if (wantsColdTurkey && !reuseEntertainmentGuardLock) {
     state.coldTurkey.focusEndsAt = sessionEndsAt;
     state.coldTurkey.status = "密码锁已启用；本轮结束时由应用公布密码";
+  } else if (reuseEntertainmentGuardLock) {
+    state.coldTurkey.focusEndsAt = 0;
+    state.coldTurkey.status = "24 小时娱乐限制锁保持启用；本轮专注不创建新密码";
+  } else if (config.coldTurkeyEnabled && !coldTurkeyReady) {
+    state.coldTurkey.active = false;
+    state.coldTurkey.focusEndsAt = 0;
+    state.coldTurkey.status = coldTurkeyAvailable()
+      ? "Windows 安全存储不可用，已跳过 Cold Turkey 密码锁"
+      : "未安装 Cold Turkey，已跳过密码锁";
   }
   sessionDurationMinutes = durationMinutes;
   sessionDistractionCount = 0;
@@ -1908,8 +1947,12 @@ ipcMain.handle("entertainment:stop", async () => {
 });
 
 ipcMain.handle("entertainment:guard:start", async (_, blockName) => {
-  if (normalizeRewards(state.rewards).rank === "惩戒营") {
-    state.status = "惩戒营状态不能开启 24 小时娱乐限制";
+  const requestedBlockName = String(blockName || "AI Commissar").trim();
+  if (
+    normalizeRewards(state.rewards).rank === "惩戒营"
+    && requestedBlockName.toLowerCase() === "games"
+  ) {
+    state.status = "惩戒营正在使用 Games 锁，请为 24 小时娱乐限制选择另一个 Cold Turkey Block";
     broadcast();
     return publicState();
   }
@@ -1925,7 +1968,7 @@ ipcMain.handle("entertainment:guard:start", async (_, blockName) => {
       noLink: true
     });
     if (result.response !== 1) return publicState();
-    await activateEntertainmentGuard(blockName || "AI Commissar");
+    await activateEntertainmentGuard(requestedBlockName);
   } catch (error) {
     state.status = `24 小时娱乐限制开启失败：${error.message}`;
   }
@@ -2060,7 +2103,7 @@ ipcMain.handle("daily-plan:generate", async (_, sourceTasks) => {
     return { ...publicState(), dailyPlanError: error.message };
   }
 });
-ipcMain.handle("daily-plan:complete", async (_, itemId, evidence) => {
+ipcMain.handle("daily-plan:complete", async (_, itemId, evidence, evidenceImageDataUrl) => {
   ensureDailyPlanCurrent();
   const item = state.dailyPlan.items.find((entry) => entry.id === String(itemId || ""));
   if (!item) {
@@ -2076,7 +2119,7 @@ ipcMain.handle("daily-plan:complete", async (_, itemId, evidence) => {
     };
   }
   try {
-    const review = await reviewDailyPlanEvidence(item, evidence);
+    const review = await reviewDailyPlanEvidence(item, evidence, evidenceImageDataUrl);
     if (review.accepted) {
       if (item.completed) {
         return {
@@ -2103,6 +2146,8 @@ ipcMain.handle("session:checkin", (_, text) => {
   const note = String(text || "").trim();
   if (note) {
     state.consecutiveDistracted = 0;
+    state.distractionWarnings = 0;
+    state.focusedSinceWarning = 0;
     state.intervention = "none";
     state.status = `已报到：${note}`;
     addHistory({ at: new Date().toISOString(), verdict: "checkin", reason: note });

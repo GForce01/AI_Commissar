@@ -248,6 +248,14 @@
       <strong>隐私边界：</strong>默认仅读取前台窗口标题和进程名。专注模式开启 AI，或娱乐模式启用 AI 点评后，截图只在内存中发送给所选视觉模型，
       本地日志不保存截图。它只应监督你自己的电脑。
     </section>
+
+    <section class="temporary-feature">
+      <div>
+        <strong>临时功能：凛冬督学局</strong>
+        <p>使用系统默认浏览器打开 redwatch.top。</p>
+      </div>
+      <button id="openWinterSupervisionButton" class="secondary" type="button">一键开启凛冬督学局</button>
+    </section>
   </main>
   <div id="stopModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="stopModalTitle">
     <section class="modal-card">
@@ -265,10 +273,15 @@
   </div>
   <div id="dailyPlanEvidenceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dailyPlanEvidenceTitle">
     <section class="modal-card">
-      <p class="eyebrow">每日计划验收</p>
+      <p class="eyebrow">每日计划审核</p>
       <h2 id="dailyPlanEvidenceTitle">提交完成证据</h2>
       <p id="dailyPlanEvidenceTask" class="modal-copy"></p>
-      <textarea id="dailyPlanEvidence" rows="6" maxlength="1500" placeholder="说明完成成果、文件或链接位置，以及如何确认已经完成。"></textarea>
+      <textarea id="dailyPlanEvidence" rows="6" maxlength="1500" placeholder="说明完成成果，或直接在这里粘贴截图（Ctrl+V）。"></textarea>
+      <div id="dailyPlanEvidenceImagePanel" class="evidence-image-panel hidden">
+        <img id="dailyPlanEvidenceImagePreview" alt="已粘贴的证据截图">
+        <button id="removeDailyPlanEvidenceImageButton" class="secondary" type="button">移除截图</button>
+      </div>
+      <p class="hint">可直接粘贴一张截图。图片仅用于本次 AI 审核，不会写入每日计划记录。</p>
       <p id="dailyPlanReviewMessage" class="review-message"></p>
       <div class="modal-actions">
         <button id="submitDailyPlanEvidenceButton" class="primary" type="button">提交证据</button>

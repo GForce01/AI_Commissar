@@ -80,14 +80,47 @@ const elements = {
   dailyPlanEvidenceTitle: document.querySelector("#dailyPlanEvidenceTitle"),
   dailyPlanEvidenceTask: document.querySelector("#dailyPlanEvidenceTask"),
   dailyPlanEvidence: document.querySelector("#dailyPlanEvidence"),
+  dailyPlanEvidenceImagePanel: document.querySelector("#dailyPlanEvidenceImagePanel"),
+  dailyPlanEvidenceImagePreview: document.querySelector("#dailyPlanEvidenceImagePreview"),
+  removeDailyPlanEvidenceImage: document.querySelector("#removeDailyPlanEvidenceImageButton"),
   dailyPlanReviewMessage: document.querySelector("#dailyPlanReviewMessage"),
   submitDailyPlanEvidence: document.querySelector("#submitDailyPlanEvidenceButton"),
-  cancelDailyPlanEvidence: document.querySelector("#cancelDailyPlanEvidenceButton")
+  cancelDailyPlanEvidence: document.querySelector("#cancelDailyPlanEvidenceButton"),
+  openWinterSupervision: document.querySelector("#openWinterSupervisionButton")
 };
 
 let preferencesHydrated = false;
 let preferencesSaveTimer;
 let selectedDailyPlanItemId = "";
+let dailyPlanEvidenceImageDataUrl = "";
+
+function clearDailyPlanEvidenceImage() {
+  dailyPlanEvidenceImageDataUrl = "";
+  elements.dailyPlanEvidenceImagePreview.removeAttribute("src");
+  elements.dailyPlanEvidenceImagePanel.classList.add("hidden");
+}
+
+function evidenceImageDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("无法读取剪贴板图片"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("剪贴板图片格式无法识别"));
+      image.onload = () => {
+        const maxDimension = 1800;
+        const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.86));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function collectPreferences() {
   return {
@@ -235,7 +268,6 @@ function render(state) {
     access.blockedByPenalty ? "惩戒营禁止娱乐" : `当前军衔：${access.rank || "列兵"}`
   ].join(" · ");
   elements.startEntertainmentGuard.disabled = guardActive || state.running || entertainmentActive
-    || Boolean(access.blockedByPenalty)
     || !state.coldTurkey?.available || !state.coldTurkey?.encryptionAvailable;
   const guardRemaining = state.entertainment?.guard?.remainingSeconds || 0;
   elements.entertainmentGuardStatus.textContent = guardActive
@@ -263,8 +295,9 @@ function render(state) {
     !state.coldTurkey?.previousPasswordAvailable
   );
   elements.recoverColdTurkey.classList.toggle("hidden", !state.coldTurkey?.recoveryAvailable);
-  elements.coldTurkeyEnabled.disabled = !state.coldTurkey?.available
-    || !state.coldTurkey?.encryptionAvailable || state.running || entertainmentActive || guardActive;
+  const coldTurkeyReady = Boolean(state.coldTurkey?.available && state.coldTurkey?.encryptionAvailable);
+  if (!coldTurkeyReady && !state.running) elements.coldTurkeyEnabled.checked = false;
+  elements.coldTurkeyEnabled.disabled = !coldTurkeyReady || state.running || entertainmentActive || guardActive;
   elements.coldTurkeyBlockName.disabled = state.running || entertainmentActive || guardActive;
   const punishmentSeconds = state.rewards?.punishmentRemainingSeconds || 0;
   const inPunishment = state.rewards?.rank === "惩戒营";
@@ -348,6 +381,7 @@ function render(state) {
       elements.dailyPlanEvidenceTitle.textContent = item.title;
       elements.dailyPlanEvidenceTask.textContent = item.details || "请提交具体、可核验的完成证据。";
       elements.dailyPlanEvidence.value = "";
+      clearDailyPlanEvidenceImage();
       elements.dailyPlanReviewMessage.textContent = "";
       elements.dailyPlanEvidenceModal.classList.remove("hidden");
       elements.dailyPlanEvidence.focus();
@@ -531,13 +565,34 @@ elements.generateDailyPlan.addEventListener("click", async () => {
 });
 elements.cancelDailyPlanEvidence.addEventListener("click", () => {
   elements.dailyPlanEvidenceModal.classList.add("hidden");
+  clearDailyPlanEvidenceImage();
+});
+elements.removeDailyPlanEvidenceImage.addEventListener("click", clearDailyPlanEvidenceImage);
+elements.dailyPlanEvidence.addEventListener("paste", async (event) => {
+  const imageItem = [...(event.clipboardData?.items || [])]
+    .find((item) => item.type.startsWith("image/"));
+  if (!imageItem) return;
+  event.preventDefault();
+  elements.dailyPlanReviewMessage.textContent = "正在读取截图...";
+  try {
+    const imageFile = imageItem.getAsFile();
+    if (!imageFile) throw new Error("无法从剪贴板取得截图");
+    dailyPlanEvidenceImageDataUrl = await evidenceImageDataUrl(imageFile);
+    elements.dailyPlanEvidenceImagePreview.src = dailyPlanEvidenceImageDataUrl;
+    elements.dailyPlanEvidenceImagePanel.classList.remove("hidden");
+    elements.dailyPlanReviewMessage.textContent = "截图已粘贴，可补充文字说明后提交。";
+  } catch (error) {
+    clearDailyPlanEvidenceImage();
+    elements.dailyPlanReviewMessage.textContent = error.message;
+  }
 });
 elements.submitDailyPlanEvidence.addEventListener("click", async () => {
   elements.submitDailyPlanEvidence.disabled = true;
   elements.submitDailyPlanEvidence.textContent = "正在审核...";
   const result = await window.commissar.completeDailyPlanItem(
     selectedDailyPlanItemId,
-    elements.dailyPlanEvidence.value
+    elements.dailyPlanEvidence.value,
+    dailyPlanEvidenceImageDataUrl
   );
   render(result);
   elements.dailyPlanReviewMessage.textContent = result.dailyPlanReview?.reason || "";
@@ -545,6 +600,17 @@ elements.submitDailyPlanEvidence.addEventListener("click", async () => {
   elements.submitDailyPlanEvidence.textContent = "提交证据";
   if (result.dailyPlanReview?.accepted) {
     elements.dailyPlanEvidenceModal.classList.add("hidden");
+    clearDailyPlanEvidenceImage();
+  }
+});
+elements.openWinterSupervision.addEventListener("click", async () => {
+  elements.openWinterSupervision.disabled = true;
+  elements.openWinterSupervision.textContent = "正在打开...";
+  try {
+    await window.commissar.openWinterSupervision();
+  } finally {
+    elements.openWinterSupervision.disabled = false;
+    elements.openWinterSupervision.textContent = "一键开启凛冬督学局";
   }
 });
 

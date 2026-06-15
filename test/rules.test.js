@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { classifyActivity, nextIntervention } = require("../src/rules");
+const {
+  advanceDistractionWarning,
+  classifyActivity,
+  nextIntervention
+} = require("../src/rules");
 const { activityCacheKey, parseAiVerdict, sanitizeCommentary } = require("../src/ai-classifier");
 const {
   generateColdTurkeyPassword,
@@ -25,7 +29,8 @@ const {
   emptyDailyPlan,
   localDateKey,
   normalizeDailyPlan,
-  normalizePlanItems
+  normalizePlanItems,
+  parseEvidenceImageDataUrl
 } = require("../src/daily-plan");
 const {
   DEFAULT_ENTERTAINMENT_INTERVAL_SECONDS,
@@ -87,6 +92,15 @@ test("new daily goals append without replacing or duplicating existing items", (
   assert.equal(result.items.length, 2);
   assert.equal(result.items[0].completed, true);
   assert.equal(result.items[1].title, "联系客户");
+});
+
+test("daily plan evidence accepts bounded image data URLs", () => {
+  assert.deepEqual(
+    parseEvidenceImageDataUrl("data:image/jpeg;base64,SGVsbG8="),
+    { mimeType: "image/jpeg", base64: "SGVsbG8=" }
+  );
+  assert.equal(parseEvidenceImageDataUrl("data:text/plain;base64,SGVsbG8="), null);
+  assert.equal(parseEvidenceImageDataUrl("not-an-image"), null);
 });
 
 test("completing a daily plan item awards one point without adding a focus session", () => {
@@ -165,6 +179,40 @@ test("interventions escalate gradually", () => {
   assert.equal(nextIntervention(1), "nudge");
   assert.equal(nextIntervention(3), "checkin");
   assert.equal(nextIntervention(6), "block");
+});
+
+test("distraction warning penalizes only on the second distracted verdict", () => {
+  const first = advanceDistractionWarning({}, "distracted");
+  assert.equal(first.warningCount, 1);
+  assert.equal(first.warned, true);
+  assert.equal(first.penalize, false);
+
+  const second = advanceDistractionWarning(first, "distracted");
+  assert.equal(second.warningCount, 0);
+  assert.equal(second.warned, false);
+  assert.equal(second.penalize, true);
+});
+
+test("five focused verdicts clear a pending distraction warning", () => {
+  let warning = advanceDistractionWarning({}, "distracted");
+  for (let index = 0; index < 4; index += 1) {
+    warning = advanceDistractionWarning(warning, "focused");
+    assert.equal(warning.warningCount, 1);
+    assert.equal(warning.clearedByFocus, false);
+  }
+
+  warning = advanceDistractionWarning(warning, "focused");
+  assert.equal(warning.warningCount, 0);
+  assert.equal(warning.focusedCount, 0);
+  assert.equal(warning.clearedByFocus, true);
+});
+
+test("unknown verdicts preserve a pending distraction warning", () => {
+  const warning = advanceDistractionWarning({}, "distracted");
+  const unknown = advanceDistractionWarning(warning, "unknown");
+  assert.equal(unknown.warningCount, 1);
+  assert.equal(unknown.focusedCount, 0);
+  assert.equal(unknown.penalize, false);
 });
 
 test("AI classifier parses strict verdict JSON", () => {

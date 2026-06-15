@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("commissar", {
   getState: () => ipcRenderer.invoke("state:get"),
+  openWinterSupervision: () => ipcRenderer.invoke("external:winter-supervision:open"),
   start: (config) => ipcRenderer.invoke("session:start", config),
   startEntertainment: (config) => ipcRenderer.invoke("entertainment:start", config),
   stopEntertainment: () => ipcRenderer.invoke("entertainment:stop"),
@@ -14,7 +15,9 @@ contextBridge.exposeInMainWorld("commissar", {
   savePreferences: (preferences) => ipcRenderer.invoke("settings:preferences:save", preferences),
   saveCompatibleApiKey: (apiKey) => ipcRenderer.invoke("settings:api-key:save", apiKey),
   generateDailyPlan: (sourceTasks) => ipcRenderer.invoke("daily-plan:generate", sourceTasks),
-  completeDailyPlanItem: (itemId, evidence) => ipcRenderer.invoke("daily-plan:complete", itemId, evidence),
+  completeDailyPlanItem: (itemId, evidence, evidenceImageDataUrl) => (
+    ipcRenderer.invoke("daily-plan:complete", itemId, evidence, evidenceImageDataUrl)
+  ),
   resetPersonality: () => ipcRenderer.invoke("settings:personality:reset"),
   recoverColdTurkey: () => ipcRenderer.invoke("cold-turkey:recover"),
   confirmColdTurkeyUnlocked: () => ipcRenderer.invoke("cold-turkey:confirm-unlocked"),
