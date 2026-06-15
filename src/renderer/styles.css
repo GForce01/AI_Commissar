@@ -28,6 +28,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid #c36b47; border-c
 .toggle input { width: auto; margin: 3px 0 0; }
 .commentary-settings { display: grid; grid-template-columns: 1fr 110px; align-items: start; gap: 10px; }
 .hint, .shortcut { color: #747b80; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
+.third-party-disclaimer { margin-top: 8px; color: #8b5a18; font-size: 12px; line-height: 1.55; }
 .actions { display: flex; gap: 10px; margin-bottom: 12px; }
 button { border: 0; border-radius: 9px; padding: 11px 16px; font: inherit; font-weight: 750; cursor: pointer; }
 .primary { background: #9e3f2d; color: white; }
