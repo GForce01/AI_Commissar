@@ -1,19 +1,28 @@
-# Release Notes
+# ОГАС政委 v0.2.1
 
-## v0.2.0
+ОГАС政委是一个 Windows 本地优先的专注辅助应用。它只在用户主动开启专注或娱乐模式后工作，帮助用户把注意力、计划、娱乐时间和可选限制工具放在同一个界面里管理。
 
-- Added OpenAI-compatible API settings in the UI, with encrypted API key storage.
-- Added Ollama routing for text and vision tasks.
-- Added daily planning with appendable goals and screenshot evidence review.
-- Added entertainment allowance rules, temporary session memory, optional AI commentary, voice speed settings, and tactical game suggestions.
-- Added optional Cold Turkey password-lock integration, 24-hour entertainment restriction, and penalty lock recovery safeguards.
-- Made Cold Turkey fully optional: core focus, planning, AI review, rewards, and entertainment allowance continue to work when Cold Turkey is not installed.
-- Changed distraction penalties to warn first, then deduct only on a second distracted verdict before the warning clears.
-- Added a temporary “凛冬督学局” link.
-- Updated UI title and copy to “ОГАС政委”.
+## 主要功能
 
-### Privacy
+- 本地前台窗口识别：按专注词、分心词、常见社交软件别名和游戏平台规则判断当前活动。
+- 偏离先警告：首次偏离不扣分，再次偏离才扣 1 点；连续推进 5 次可清除警告。
+- 每日计划：每天生成可验收的任务清单，当天可继续追加新目标。
+- 证据审核：计划项和提前结束专注都可提交文字证据；每日计划还支持粘贴截图交给视觉模型审核。
+- 荣誉值与津贴：完成专注获得荣誉值，娱乐时间需要用荣誉值兑换。
+- 娱乐模式：可保留 30 轮临时上下文，识别游戏时可以给出更具体的战术建议。
+- 模型配置：支持 OpenAI-compatible API，可分别设置文字模型、视觉模型和语音模型；语音模型留空时自动停用语音功能。
+- Ollama 分流：文字和视觉任务可优先走本地 Ollama，也可选择回退到兼容 API。
+- Cold Turkey 可选联动：没有 Cold Turkey 也能使用核心功能；安装 Cold Turkey Pro 后可启用专注密码锁、24 小时娱乐限制和惩戒营独立 Block。
+- 可编辑人格 Prompt、语音音色和语速。
+- 一键打开凛冬督学局。
 
-- API keys are stored through Electron safe storage and are not written to normal settings files.
-- Screenshots are not persisted by the app.
-- Local user data lives under `%APPDATA%\ai-commissar` and is not part of the source release.
+## 隐私与安全
+
+- API Key 只通过界面输入，并使用 Electron 系统安全存储加密。
+- API Key 不写入普通设置文件，也不应出现在源码或 release 包中。
+- 截图不会写入仓库；只在启用视觉判断、娱乐 AI 点评或粘贴证据时发送给用户配置的模型服务。
+- 用户数据默认保存在 `%APPDATA%\ai-commissar`，不会包含在源码 release 中。
+
+## 使用建议
+
+第一次使用可以先不配置 AI 和 Cold Turkey，只用本地关键词、计时、每日计划和荣誉值系统。确认工作流适合自己后，再按需要接入兼容 API、Ollama 或 Cold Turkey。
