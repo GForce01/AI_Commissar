@@ -72,4 +72,47 @@ function nextIntervention(consecutiveDistracted) {
   return "none";
 }
 
-module.exports = { classifyActivity, findKeywordMatch, nextIntervention, normalizeList };
+function advanceDistractionWarning(current = {}, verdict) {
+  let warningCount = Math.max(0, Math.min(1, Number(current.warningCount) || 0));
+  let focusedCount = warningCount > 0
+    ? Math.max(0, Math.min(4, Number(current.focusedCount) || 0))
+    : 0;
+  const transition = {
+    warningCount,
+    focusedCount,
+    warned: false,
+    penalize: false,
+    clearedByFocus: false
+  };
+
+  if (verdict === "distracted") {
+    transition.focusedCount = 0;
+    if (warningCount === 0) {
+      transition.warningCount = 1;
+      transition.warned = true;
+    } else {
+      transition.warningCount = 0;
+      transition.penalize = true;
+    }
+    return transition;
+  }
+
+  if (verdict === "focused" && warningCount > 0) {
+    transition.focusedCount += 1;
+    if (transition.focusedCount >= 5) {
+      transition.warningCount = 0;
+      transition.focusedCount = 0;
+      transition.clearedByFocus = true;
+    }
+  }
+
+  return transition;
+}
+
+module.exports = {
+  advanceDistractionWarning,
+  classifyActivity,
+  findKeywordMatch,
+  nextIntervention,
+  normalizeList
+};

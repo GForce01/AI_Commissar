@@ -1,4 +1,5 @@
 const MAX_DAILY_PLAN_ITEMS = 12;
+const MAX_EVIDENCE_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -58,11 +59,24 @@ function normalizeDailyPlan(saved = {}, date = new Date()) {
   };
 }
 
+function parseEvidenceImageDataUrl(value) {
+  const match = String(value || "").match(
+    /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/
+  );
+  if (!match) return null;
+  const base64 = match[2];
+  const approximateBytes = Math.floor(base64.length * 0.75);
+  if (approximateBytes <= 0 || approximateBytes > MAX_EVIDENCE_IMAGE_BYTES) return null;
+  return { mimeType: match[1], base64 };
+}
+
 module.exports = {
+  MAX_EVIDENCE_IMAGE_BYTES,
   MAX_DAILY_PLAN_ITEMS,
   appendPlanItems,
   emptyDailyPlan,
   localDateKey,
   normalizeDailyPlan,
-  normalizePlanItems
+  normalizePlanItems,
+  parseEvidenceImageDataUrl
 };
