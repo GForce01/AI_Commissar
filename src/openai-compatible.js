@@ -17,17 +17,50 @@ function compatibleEndpoint(baseUrl, pathname) {
 }
 
 function extractChatCompletionText(payload = {}) {
-  const content = payload.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
+  const choice = payload.choices?.[0] || payload.output?.choices?.[0] || {};
+  const message = choice.message || choice.delta || {};
+  const content = message.content ?? choice.text ?? payload.output?.text ?? payload.text;
+  if (typeof content === "string" && content.trim()) return content;
   if (Array.isArray(content)) {
-    return content.map((item) => item?.text || item?.content || "").join("");
+    const text = content.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item?.text === "string") return item.text;
+      if (typeof item?.content === "string") return item.content;
+      if (typeof item?.output_text === "string") return item.output_text;
+      return "";
+    }).join("");
+    if (text.trim()) return text;
   }
+  if (typeof message.reasoning_content === "string") return message.reasoning_content;
   return "";
+}
+
+function summarizeCompatibleResponse(payload = {}) {
+  const summary = JSON.stringify(payload, (_key, value) => {
+    if (typeof value === "string") return value.length > 300 ? `${value.slice(0, 300)}...` : value;
+    return value;
+  });
+  return String(summary || "").slice(0, 800);
 }
 
 function completionTokenBody(maxOutputTokens, parameter = "max_completion_tokens") {
   const tokens = Math.max(1, Number(maxOutputTokens) || 120);
   return { [parameter]: tokens };
+}
+
+function isQwenCompatibleRequest(baseUrl, model) {
+  const text = `${baseUrl || ""} ${model || ""}`.toLowerCase();
+  return text.includes("dashscope")
+    || text.includes("aliyuncs.com")
+    || text.includes("qwen")
+    || text.includes("千问")
+    || text.includes("通义");
+}
+
+function qwenThinkingBody(baseUrl, model) {
+  return isQwenCompatibleRequest(baseUrl, model)
+    ? { extra_body: { enable_thinking: false } }
+    : {};
 }
 
 function alternateTokenParameter(errorText, currentParameter) {
@@ -51,5 +84,8 @@ module.exports = {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  isQwenCompatibleRequest,
+  qwenThinkingBody,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 };

@@ -30,6 +30,8 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  qwenThinkingBody,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("./openai-compatible");
 const {
@@ -747,7 +749,9 @@ function getCompatibleApiConfig(config = state.config || state.settings.preferen
     textBaseUrl: normalizeApiBaseUrl(config?.textApiBaseUrl || config?.apiBaseUrl || preferences.textApiBaseUrl || preferences.apiBaseUrl),
     visionBaseUrl: normalizeApiBaseUrl(config?.visionApiBaseUrl || config?.apiBaseUrl || preferences.visionApiBaseUrl || preferences.apiBaseUrl),
     ttsBaseUrl: normalizeApiBaseUrl(config?.ttsApiBaseUrl || config?.apiBaseUrl || preferences.ttsApiBaseUrl || preferences.apiBaseUrl),
-    ttsProvider: config?.ttsProvider === "qwen" || preferences.ttsProvider === "qwen" ? "qwen" : "openai",
+    ttsProvider: (config && Object.prototype.hasOwnProperty.call(config, "ttsProvider")
+      ? config.ttsProvider
+      : preferences.ttsProvider) === "qwen" ? "qwen" : "openai",
     textModel,
     visionModel: String(
       config?.visionModel || config?.aiModel || preferences.visionModel || preferences.aiModel || textModel
@@ -1101,6 +1105,7 @@ async function requestAiClassification(
     },
     body: JSON.stringify({
       model,
+      ...qwenThinkingBody(baseUrl, model),
       ...completionTokenBody(maxOutputTokens, tokenParameter),
       messages: [{ role: "user", content: messageContent }]
     })
@@ -1130,8 +1135,11 @@ async function requestAiClassification(
     }
   }
 
-  const text = extractChatCompletionText(await response.json()).trim();
-  if (!text) throw new Error(`${api.providerName} 返回了空响应`);
+  const payload = await response.json();
+  const text = extractChatCompletionText(payload).trim();
+  if (!text) {
+    throw new Error(`${api.providerName} 返回了空响应：${summarizeCompatibleResponse(payload)}`);
+  }
   recordAiUsage("content", api.providerName, model, { fallback });
   state.aiUsage.content.modality = modality;
   return text;
@@ -1551,15 +1559,36 @@ function repairStreamingWavHeader(filePath) {
     throw new Error("OpenAI 返回的音频不是有效 WAV 文件");
   }
 
-  if (wav.readUInt32LE(4) === 0xFFFFFFFF) wav.writeUInt32LE(wav.length - 8, 4);
+  const riffSize = wav.readUInt32LE(4);
+  if (riffSize === 0xFFFFFFFF || riffSize > wav.length - 8) {
+    wav.writeUInt32LE(wav.length - 8, 4);
+  }
   const dataOffset = wav.indexOf(Buffer.from("data"), 12);
   if (dataOffset < 0 || dataOffset + 8 > wav.length) {
     throw new Error("WAV 文件缺少 data 区块");
   }
-  if (wav.readUInt32LE(dataOffset + 4) === 0xFFFFFFFF) {
+  const dataSize = wav.readUInt32LE(dataOffset + 4);
+  const actualDataSize = wav.length - dataOffset - 8;
+  if (dataSize === 0xFFFFFFFF || dataSize > actualDataSize) {
     wav.writeUInt32LE(wav.length - dataOffset - 8, dataOffset + 4);
   }
   fs.writeFileSync(filePath, wav);
+}
+
+function isValidWavFile(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const header = Buffer.alloc(12);
+    const bytesRead = fs.readSync(fd, header, 0, 12, 0);
+    return bytesRead >= 12
+      && header.toString("ascii", 0, 4) === "RIFF"
+      && header.toString("ascii", 8, 12) === "WAVE";
+  } catch {
+    return false;
+  } finally {
+    if (fd) fs.closeSync(fd);
+  }
 }
 
 function playWav(filePath) {
@@ -1573,6 +1602,46 @@ function playWav(filePath) {
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
     { windowsHide: true, timeout: 60000 }
   );
+}
+
+function fileUri(filePath) {
+  return new URL(`file:///${filePath.replace(/\\/g, "/")}`).href;
+}
+
+function playMedia(filePath) {
+  if (path.extname(filePath).toLowerCase() === ".wav") return playWav(filePath);
+  const escapedUri = fileUri(filePath).replaceAll("'", "''");
+  const command = [
+    "Add-Type -AssemblyName PresentationCore;",
+    "$player = New-Object System.Windows.Media.MediaPlayer;",
+    `$player.Open([Uri]'${escapedUri}');`,
+    "$deadline = (Get-Date).AddSeconds(10);",
+    "while (-not $player.NaturalDuration.HasTimeSpan -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 };",
+    "if (-not $player.NaturalDuration.HasTimeSpan) { throw '无法读取音频时长'; };",
+    "$player.Play();",
+    "Start-Sleep -Milliseconds ([Math]::Min(60000, [Math]::Max(500, [int]$player.NaturalDuration.TimeSpan.TotalMilliseconds + 300)));",
+    "$player.Close();"
+  ].join(" ");
+  return execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-Sta", "-ExecutionPolicy", "Bypass", "-Command", command],
+    { windowsHide: true, timeout: 70000 }
+  );
+}
+
+function audioExtensionFrom(contentType = "", sourceUrl = "") {
+  const type = String(contentType || "").toLowerCase();
+  if (type.includes("mpeg") || type.includes("mp3")) return ".mp3";
+  if (type.includes("wav") || type.includes("wave")) return ".wav";
+  if (type.includes("ogg")) return ".ogg";
+  if (type.includes("aac")) return ".aac";
+  try {
+    const ext = path.extname(new URL(sourceUrl).pathname).toLowerCase();
+    if ([".mp3", ".wav", ".ogg", ".aac", ".m4a"].includes(ext)) return ext;
+  } catch {
+    // The URL may be absent or relative.
+  }
+  return ".mp3";
 }
 
 async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
@@ -1611,7 +1680,7 @@ async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
     fs.writeFileSync(audioPath, Buffer.from(await response.arrayBuffer()));
   }
 
-  await playWav(audioPath);
+  await playMedia(audioPath);
   recordAiUsage("speech", api.providerName, api.ttsModel);
   broadcast();
 }
@@ -1643,24 +1712,42 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
     .update(`qwen:${api.ttsBaseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${text}`)
     .digest("hex")
     .slice(0, 20);
-  const audioPath = path.join(cacheDir, `${hash}.wav`);
+  let audioPath = "";
+  const cached = fs.readdirSync(cacheDir).find((file) => file.startsWith(`${hash}.`));
+  if (cached) audioPath = path.join(cacheDir, cached);
+  if (audioPath && path.extname(audioPath).toLowerCase() === ".wav" && !isValidWavFile(audioPath)) {
+    fs.rmSync(audioPath, { force: true });
+    audioPath = "";
+  }
 
-  if (!fs.existsSync(audioPath)) {
-    const response = await fetch(endpoint, {
+  if (!audioPath || !fs.existsSync(audioPath)) {
+    const requestBody = {
+      model: api.ttsModel,
+      text,
+      voice,
+      language_type: "Chinese",
+      stream: false
+    };
+    const legacyRequestBody = {
+      model: api.ttsModel,
+      input: {
+        text,
+        voice,
+        language_type: "Chinese"
+      }
+    };
+    const request = (body) => fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: api.ttsModel,
-        input: {
-          text,
-          voice,
-          language_type: "Chinese"
-        }
-      })
+      body: JSON.stringify(body)
     });
+    let response = await request(requestBody);
+    if (!response.ok && response.status === 400) {
+      response = await request(legacyRequestBody);
+    }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 500);
       throw new Error(`Qwen-TTS ${response.status}${detail ? `：${detail}` : ""}`);
@@ -1668,6 +1755,7 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
     const payload = await response.json();
     const audioData = qwenTtsAudioData(payload);
     if (audioData) {
+      audioPath = path.join(cacheDir, `${hash}.wav`);
       fs.writeFileSync(audioPath, Buffer.from(audioData, "base64"));
     } else {
       const audioUrl = qwenTtsAudioUrl(payload);
@@ -1676,26 +1764,32 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
       if (!audioResponse.ok) {
         throw new Error(`Qwen-TTS 音频下载失败 ${audioResponse.status}`);
       }
+      const extension = audioExtensionFrom(audioResponse.headers.get("content-type"), audioUrl);
+      audioPath = path.join(cacheDir, `${hash}${extension}`);
       fs.writeFileSync(audioPath, Buffer.from(await audioResponse.arrayBuffer()));
     }
   }
 
-  await playWav(audioPath);
+  await playMedia(audioPath);
   recordAiUsage("speech", "Qwen-TTS", api.ttsModel);
   broadcast();
 }
 
-async function speakCommissar(text) {
+async function speakConfiguredTts(text) {
   const voice = state.config?.ttsVoice || "onyx";
   const speed = state.config?.ttsSpeed;
+  const api = getCompatibleApiConfig();
+  if (!getCompatibleApiKey("tts") || !api.ttsModel) return;
+  if (api.ttsProvider === "qwen") {
+    await speakWithQwenTts(text, voice, speed);
+  } else {
+    await speakWithOpenAi(text, voice, speed);
+  }
+}
+
+async function speakCommissar(text) {
   const speechTask = speechQueue.then(async () => {
-    const api = getCompatibleApiConfig();
-    if (!getCompatibleApiKey("tts") || !api.ttsModel) return;
-    if (api.ttsProvider === "qwen") {
-      await speakWithQwenTts(text, voice, speed);
-    } else {
-      await speakWithOpenAi(text, voice, speed);
-    }
+    await speakConfiguredTts(text);
   }).catch((error) => {
     state.status = `AI 语音暂不可用：${error.message}`;
     broadcast();
@@ -1737,7 +1831,7 @@ async function testConfiguredModel(kind, config = {}) {
     if (kind === "text") {
       const output = await requestTextModel(
         "请只回复：文字模型测试成功",
-        { maxOutputTokens: 40 }
+        { maxOutputTokens: 300 }
       );
       return {
         ok: true,
@@ -1765,7 +1859,7 @@ async function testConfiguredModel(kind, config = {}) {
       };
     }
     if (kind === "speech") {
-      await speakCommissar("语音模型测试成功，当前语音服务已经接通。");
+      await speakConfiguredTts("语音模型测试成功，当前语音服务已经接通。");
       return {
         ok: true,
         kind,
@@ -2018,7 +2112,9 @@ ipcMain.handle("session:start", async (_, config) => {
       ollamaVisionModel: String(config.ollamaVisionModel || "qwen3-vl:8b").trim(),
       ollamaFallbackToOpenAi: config.ollamaFallbackToOpenAi !== false,
       visionQuality: normalizeVisionQuality(config.visionQuality),
-      ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
+      ttsProvider: config.ttsProvider === "qwen" ? "qwen" : "openai",
+      ttsApiBaseUrl: String(config.ttsApiBaseUrl || "").trim(),
+      ttsVoice: String(config.ttsVoice || "onyx").trim().slice(0, 180) || "onyx",
       ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
       textModel: config.textModel || config.aiModel || "gpt-5.4-mini",
       visionModel: config.visionModel || config.aiModel || config.textModel || "gpt-5.4-mini",
@@ -2272,7 +2368,7 @@ ipcMain.handle("voice:preview", async (_, options = {}) => {
     ttsApiBaseUrl: String(options.ttsApiBaseUrl || state.settings.preferences.ttsApiBaseUrl || "").trim(),
     ttsModel: String(options.ttsModel ?? state.settings.preferences.ttsModel ?? "").trim()
   };
-  await speakCommissar(await generateCommissarLine());
+  await speakConfiguredTts("保持警惕，风暴依然作响。现在立刻回到任务。");
   if (previousVoice) state.config.ttsVoice = previousVoice;
   else delete state.config.ttsVoice;
   if (previousSpeed) state.config.ttsSpeed = previousSpeed;

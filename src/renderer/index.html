@@ -112,10 +112,10 @@
             <button id="saveTtsApiKeyButton" class="secondary" type="button">保存语音 Key</button>
             <button id="clearTtsApiKeyButton" class="quiet" type="button">清除语音 Key</button>
           </div>
-          <div class="prompt-actions">
-            <button id="testTextModelButton" class="secondary" type="button">测试文字模型</button>
-            <button id="testVisionModelButton" class="secondary" type="button">测试视觉模型</button>
-            <button id="testSpeechModelButton" class="secondary" type="button">测试语音模型</button>
+          <div class="prompt-actions model-test-actions">
+            <button id="testTextModelButton" class="diagnostic" type="button">测试文字模型</button>
+            <button id="testVisionModelButton" class="diagnostic" type="button">测试视觉模型</button>
+            <button id="testSpeechModelButton" class="diagnostic" type="button">测试语音模型</button>
           </div>
           <p id="modelTestStatus" class="hint">测试会使用当前保存的 Key、Base URL 和模型配置。</p>
         </details>
@@ -167,15 +167,12 @@
           <p class="hint">需要 Cold Turkey Pro 的密码锁功能。密码只在任务完成或证据通过后显示。</p>
           <p class="third-party-disclaimer">第三方声明：本应用与 Cold Turkey 无隶属、合作或利益关系；相关屏蔽、锁定和解锁风险请自行评估，本应用不对第三方软件造成的后果负责。</p>
         </details>
-        <datalist id="ttsVoicePresets">
-          <option value="onyx">OpenAI Onyx</option>
-          <option value="echo">OpenAI Echo</option>
-          <option value="ash">OpenAI Ash</option>
-          <option value="qwen-tts-vd-bailian-voice-20260616085444879-9660">Qwen-TTS-VD 默认音色</option>
-        </datalist>
         <div class="voice-row">
           <label>政委音色
-            <input id="ttsVoice" list="ttsVoicePresets" value="onyx" placeholder="OpenAI 音色或 Qwen voiceID">
+            <select id="ttsVoicePreset"></select>
+          </label>
+          <label id="ttsVoiceCustomLabel" class="hidden">自定义声音
+            <input id="ttsVoice" value="" placeholder="输入 OpenAI 音色或 Qwen voiceID">
           </label>
           <label>语速
             <input id="ttsSpeed" type="number" min="0.75" max="1.5" step="0.05" value="1.1">

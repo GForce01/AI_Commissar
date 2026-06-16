@@ -17,6 +17,9 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  isQwenCompatibleRequest,
+  qwenThinkingBody,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("../src/openai-compatible");
 const {
@@ -324,7 +327,26 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
   assert.equal(extractChatCompletionText({
     choices: [{ message: { content: "兼容响应" } }]
   }), "兼容响应");
+  assert.equal(extractChatCompletionText({
+    choices: [{ text: "旧式兼容响应" }]
+  }), "旧式兼容响应");
+  assert.equal(extractChatCompletionText({
+    output: { text: "输出字段响应" }
+  }), "输出字段响应");
+  assert.equal(extractChatCompletionText({
+    choices: [{ message: { content: "", reasoning_content: "推理字段响应" } }]
+  }), "推理字段响应");
+  assert.equal(extractChatCompletionText({
+    choices: [{ message: { content: [{ text: "数组" }, { output_text: "响应" }] } }]
+  }), "数组响应");
+  assert.match(summarizeCompatibleResponse({ value: "x".repeat(400) }), /xxx/);
   assert.deepEqual(completionTokenBody(900), { max_completion_tokens: 900 });
+  assert.equal(isQwenCompatibleRequest("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-plus"), true);
+  assert.equal(isQwenCompatibleRequest("https://api.openai.com/v1", "gpt-4o-mini"), false);
+  assert.deepEqual(qwenThinkingBody("https://dashscope.aliyuncs.com/api/v1", "qwen3.7-plus"), {
+    extra_body: { enable_thinking: false }
+  });
+  assert.deepEqual(qwenThinkingBody("https://api.openai.com/v1", "gpt-4o-mini"), {});
   assert.equal(alternateTokenParameter(
     "Unsupported parameter: 'max_completion_tokens'. Use 'max_tokens' instead.",
     "max_completion_tokens"
@@ -405,6 +427,7 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
   assert.equal(normalizePreferences({ aiModel: "legacy-model" }).visionModel, "legacy-model");
   assert.equal(normalizePreferences({ ttsModel: "   " }).ttsModel, "");
+  assert.equal(normalizePreferences().ttsModel, "gpt-4o-mini-tts");
   assert.equal(normalizePreferences({ ttsProvider: "unexpected" }).ttsProvider, "openai");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).textApiBaseUrl, "https://legacy.example/v1");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).visionApiBaseUrl, "https://legacy.example/v1");

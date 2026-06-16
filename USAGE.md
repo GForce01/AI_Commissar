@@ -46,7 +46,11 @@ npm.cmd start
 
 视觉模型旁边的“同文字模型”按钮可以一键复制文字模型名称和文字 API Base URL。视觉/语音 Key 旁边的“同文字 Key”按钮可以复制当前输入的文字 Key；如果文字 Key 已保存但不显示，也可以在后台同步已保存的文字 Key。API Key 保存后会使用 Electron 系统安全存储加密，并立即从输入框清空。它不会写入 `settings.json`，也不会提交到仓库。旧版单一 API Key 会作为升级后的默认后备，直到你分别保存新的 Key。
 
-如果选择 Qwen-TTS，应用会使用阿里云百炼非实时语音合成接口，默认 Base URL 为 `https://dashscope.aliyuncs.com/api/v1`，默认模型为 `qwen3-tts-vd`，默认 voiceID 为 `qwen-tts-vd-bailian-voice-20260616085444879-9660`。实时语音合成属于 WebSocket 流式接口，暂不适合当前的短句缓存播放流程。
+文字、视觉和语音测试按钮会使用当前保存的 Key、Base URL 和模型配置发起真实请求。测试语音模型时会播放一句试听短句；如果语音模型留空，语音相关功能会暂时停用。
+
+如果选择 Qwen-TTS，应用会使用阿里云百炼非实时语音合成接口，默认 Base URL 为 `https://dashscope.aliyuncs.com/api/v1`，默认模型为 `qwen3-tts-vd-2026-01-26`。界面内置青年政委、中年政委和老政委等预设音色，也可以手动输入自定义 voiceID。实时语音合成属于 WebSocket 流式接口，暂不适合当前的短句缓存播放流程。
+
+使用 Qwen / DashScope 文字或视觉模型时，应用默认在 chat 请求中加入 `extra_body.enable_thinking = false`，更适合分类、证据审核和短点评这类需要直接输出的任务。
 
 ## 使用本地 Ollama
 
