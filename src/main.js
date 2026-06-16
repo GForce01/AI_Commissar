@@ -1726,6 +1726,61 @@ async function speakPersonalizedReminder() {
   await speakCommissar(await generateCommissarLine());
 }
 
+async function testConfiguredModel(kind, config = {}) {
+  const previousConfig = state.config;
+  state.config = normalizePreferences({
+    ...state.settings.preferences,
+    ...config
+  });
+  try {
+    const api = getCompatibleApiConfig(state.config);
+    if (kind === "text") {
+      const output = await requestTextModel(
+        "请只回复：文字模型测试成功",
+        { maxOutputTokens: 40 }
+      );
+      return {
+        ok: true,
+        kind,
+        provider: api.providerName,
+        baseUrl: api.textBaseUrl,
+        model: api.textModel,
+        message: output.slice(0, 160)
+      };
+    }
+    if (kind === "vision") {
+      const screenshot = await capturePrimaryScreen();
+      if (!screenshot) throw new Error("无法截取主屏幕");
+      const output = await requestVisionModel(
+        "请用不超过30个字描述这张截图，并以“视觉模型测试成功：”开头。",
+        screenshot
+      );
+      return {
+        ok: true,
+        kind,
+        provider: api.providerName,
+        baseUrl: api.visionBaseUrl,
+        model: api.visionModel,
+        message: output.slice(0, 160)
+      };
+    }
+    if (kind === "speech") {
+      await speakCommissar("语音模型测试成功，当前语音服务已经接通。");
+      return {
+        ok: true,
+        kind,
+        provider: api.ttsProvider === "qwen" ? "Qwen-TTS" : api.providerName,
+        baseUrl: api.ttsBaseUrl,
+        model: api.ttsModel,
+        message: "已发送语音试听"
+      };
+    }
+    throw new Error("未知测试类型");
+  } finally {
+    state.config = previousConfig;
+  }
+}
+
 function showBlocker() {
   if (blockerWindow || Date.now() - lastBlockAt < 60000) return;
   lastBlockAt = Date.now();
@@ -1893,6 +1948,23 @@ function createWindow() {
 }
 
 ipcMain.handle("state:get", () => publicState());
+ipcMain.handle("model:test", async (_, kind, config) => {
+  try {
+    const result = await testConfiguredModel(kind, config);
+    state.status = `${result.kind} 测试成功：${result.model}`;
+    broadcast();
+    return { ...publicState(), modelTest: result };
+  } catch (error) {
+    const result = {
+      ok: false,
+      kind,
+      message: error.message
+    };
+    state.status = `模型测试失败：${error.message}`;
+    broadcast();
+    return { ...publicState(), modelTest: result };
+  }
+});
 ipcMain.handle("external:winter-supervision:open", async () => {
   const url = "https://redwatch.top/";
   await shell.openExternal(url);

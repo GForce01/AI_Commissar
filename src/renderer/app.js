@@ -27,6 +27,10 @@ const elements = {
   clearVisionApiKey: document.querySelector("#clearVisionApiKeyButton"),
   saveTtsApiKey: document.querySelector("#saveTtsApiKeyButton"),
   clearTtsApiKey: document.querySelector("#clearTtsApiKeyButton"),
+  testTextModel: document.querySelector("#testTextModelButton"),
+  testVisionModel: document.querySelector("#testVisionModelButton"),
+  testSpeechModel: document.querySelector("#testSpeechModelButton"),
+  modelTestStatus: document.querySelector("#modelTestStatus"),
   ollamaEnabled: document.querySelector("#ollamaEnabled"),
   ollamaTextModel: document.querySelector("#ollamaTextModel"),
   ollamaVisionModel: document.querySelector("#ollamaVisionModel"),
@@ -410,10 +414,18 @@ function render(state) {
     elements.saveVisionApiKey,
     elements.clearVisionApiKey,
     elements.saveTtsApiKey,
-    elements.clearTtsApiKey
+    elements.clearTtsApiKey,
+    elements.testTextModel,
+    elements.testVisionModel,
+    elements.testSpeechModel
   ].forEach((button) => {
     button.disabled = state.running || entertainmentActive;
   });
+  if (state.modelTest) {
+    elements.modelTestStatus.textContent = state.modelTest.ok
+      ? `测试成功：${state.modelTest.provider || "兼容 API"} · ${state.modelTest.model || "未显示模型"} · ${state.modelTest.baseUrl || "未显示 Base URL"} · ${state.modelTest.message || ""}`
+      : `测试失败：${state.modelTest.message || "未知错误"}`;
+  }
   elements.ttsModel.disabled = state.running || entertainmentActive;
   const ttsAvailable = Boolean(elements.ttsModel.value.trim());
   if (!ttsAvailable && !state.running && !entertainmentActive) elements.voiceEnabled.checked = false;
@@ -651,6 +663,22 @@ elements.previewVoice.addEventListener("click", async () => {
   elements.previewVoice.disabled = false;
   elements.previewVoice.textContent = "试听";
 });
+
+async function testModel(kind, button) {
+  clearTimeout(preferencesSaveTimer);
+  await window.commissar.savePreferences(collectPreferences());
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = "测试中...";
+  elements.modelTestStatus.textContent = "正在测试，请稍候...";
+  render(await window.commissar.testModel(kind, collectPreferences()));
+  button.disabled = false;
+  button.textContent = previousText;
+}
+
+elements.testTextModel.addEventListener("click", () => testModel("text", elements.testTextModel));
+elements.testVisionModel.addEventListener("click", () => testModel("vision", elements.testVisionModel));
+elements.testSpeechModel.addEventListener("click", () => testModel("speech", elements.testSpeechModel));
 elements.savePersonality.addEventListener("click", async () => {
   render(await window.commissar.savePersonality(elements.personalityPrompt.value));
 });

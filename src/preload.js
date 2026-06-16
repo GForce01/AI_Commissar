@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("commissar", {
   forceStop: () => ipcRenderer.invoke("session:stop:force"),
   checkIn: (text) => ipcRenderer.invoke("session:checkin", text),
   previewVoice: (options) => ipcRenderer.invoke("voice:preview", options),
+  testModel: (kind, config) => ipcRenderer.invoke("model:test", kind, config),
   savePersonality: (prompt) => ipcRenderer.invoke("settings:personality:save", prompt),
   savePreferences: (preferences) => ipcRenderer.invoke("settings:preferences:save", preferences),
   saveCompatibleApiKey: (scope, apiKey) => ipcRenderer.invoke("settings:api-key:save", scope, apiKey),

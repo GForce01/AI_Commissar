@@ -112,6 +112,12 @@
             <button id="saveTtsApiKeyButton" class="secondary" type="button">保存语音 Key</button>
             <button id="clearTtsApiKeyButton" class="quiet" type="button">清除语音 Key</button>
           </div>
+          <div class="prompt-actions">
+            <button id="testTextModelButton" class="secondary" type="button">测试文字模型</button>
+            <button id="testVisionModelButton" class="secondary" type="button">测试视觉模型</button>
+            <button id="testSpeechModelButton" class="secondary" type="button">测试语音模型</button>
+          </div>
+          <p id="modelTestStatus" class="hint">测试会使用当前保存的 Key、Base URL 和模型配置。</p>
         </details>
         <details class="integration">
           <summary>本地 Ollama 分流</summary>
