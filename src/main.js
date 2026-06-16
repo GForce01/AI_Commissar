@@ -44,6 +44,7 @@ const {
 const {
   appendPlanItems,
   emptyDailyPlan,
+  generatedPlanItems,
   localDateKey,
   normalizeDailyPlan,
   normalizePlanItems,
@@ -1523,10 +1524,13 @@ async function generateDailyPlan(sourceTasks) {
   });
   const parsed = parseJsonObjectFromText(text);
   if (!parsed) throw new Error("AI 未能生成有效计划，请稍后重试。");
-  const generatedItems = normalizePlanItems(parsed.items).map((item) => ({
+  const generatedItems = normalizePlanItems(generatedPlanItems(parsed)).map((item) => ({
     ...item,
     id: crypto.randomUUID()
   }));
+  if (generatedItems.length === 0) {
+    throw new Error("AI 返回了内容，但没有识别到计划项；请尝试让模型只返回 items 数组。");
+  }
   const merged = appendPlanItems(existingItems, generatedItems);
   if (merged.addedCount === 0) throw new Error("没有发现可追加的新目标，可能与现有计划重复或已达上限。");
   state.dailyPlan = {
