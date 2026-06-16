@@ -66,6 +66,11 @@ npm.cmd start
 
 如果要启用 AI，可以选择通用 OpenAI-compatible API 或本地 Ollama。
 
+常用入口：
+
+- [OpenAI API 平台](https://openai.com/api/)
+- [阿里云百炼控制台](https://bailian.console.aliyun.com/)
+
 **OpenAI-Compatible API**
 
 界面中可分别配置：
