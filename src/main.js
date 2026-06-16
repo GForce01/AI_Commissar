@@ -1615,7 +1615,7 @@ function playMedia(filePath) {
   ].join(" ");
   return execFileAsync(
     "powershell.exe",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    ["-NoProfile", "-Sta", "-ExecutionPolicy", "Bypass", "-Command", command],
     { windowsHide: true, timeout: 70000 }
   );
 }
@@ -1806,7 +1806,7 @@ async function testConfiguredModel(kind, config = {}) {
     if (kind === "text") {
       const output = await requestTextModel(
         "请只回复：文字模型测试成功",
-        { maxOutputTokens: 40 }
+        { maxOutputTokens: 300 }
       );
       return {
         ok: true,
@@ -1834,7 +1834,13 @@ async function testConfiguredModel(kind, config = {}) {
       };
     }
     if (kind === "speech") {
-      await speakCommissar("语音模型测试成功，当前语音服务已经接通。");
+      const voice = state.config?.ttsVoice || "onyx";
+      const speed = state.config?.ttsSpeed;
+      if (api.ttsProvider === "qwen") {
+        await speakWithQwenTts("语音模型测试成功，当前语音服务已经接通。", voice, speed);
+      } else {
+        await speakWithOpenAi("语音模型测试成功，当前语音服务已经接通。", voice, speed);
+      }
       return {
         ok: true,
         kind,

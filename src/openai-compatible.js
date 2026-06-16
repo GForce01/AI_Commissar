@@ -20,15 +20,16 @@ function extractChatCompletionText(payload = {}) {
   const choice = payload.choices?.[0] || payload.output?.choices?.[0] || {};
   const message = choice.message || choice.delta || {};
   const content = message.content ?? choice.text ?? payload.output?.text ?? payload.text;
-  if (typeof content === "string") return content;
+  if (typeof content === "string" && content.trim()) return content;
   if (Array.isArray(content)) {
-    return content.map((item) => {
+    const text = content.map((item) => {
       if (typeof item === "string") return item;
       if (typeof item?.text === "string") return item.text;
       if (typeof item?.content === "string") return item.content;
       if (typeof item?.output_text === "string") return item.output_text;
       return "";
     }).join("");
+    if (text.trim()) return text;
   }
   if (typeof message.reasoning_content === "string") return message.reasoning_content;
   return "";

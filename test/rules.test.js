@@ -332,6 +332,9 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
     output: { text: "输出字段响应" }
   }), "输出字段响应");
   assert.equal(extractChatCompletionText({
+    choices: [{ message: { content: "", reasoning_content: "推理字段响应" } }]
+  }), "推理字段响应");
+  assert.equal(extractChatCompletionText({
     choices: [{ message: { content: [{ text: "数组" }, { output_text: "响应" }] } }]
   }), "数组响应");
   assert.match(summarizeCompatibleResponse({ value: "x".repeat(400) }), /xxx/);
