@@ -65,6 +65,7 @@ const {
   applyDistractionPenalty,
   applyForcedExitPenalty,
   awardDailyPlanItem,
+  awardFocusTime,
   awardSession,
   entertainmentCost,
   normalizeRewards,
@@ -163,7 +164,10 @@ let state = {
   }
 };
 let sessionEndsAt = 0;
+let sessionStartedAt = 0;
 let sessionDurationMinutes = 0;
+let sessionCreditedMinutes = 0;
+let sessionEarnedPoints = 0;
 let sessionDistractionCount = 0;
 let lastTextAiCheckAt = 0;
 let lastVisionAiCheckAt = 0;
@@ -887,12 +891,27 @@ function dailyPlanTick() {
 }
 
 function awardCompletedSession() {
-  state.rewards = awardSession(state.rewards, sessionDurationMinutes);
+  const lastEarned = state.rewards.lastEarned;
+  state.rewards = awardSession(state.rewards, 0);
+  state.rewards.lastEarned = lastEarned;
+  saveRewards();
+  void reconcilePenaltyLock();
+  return state.rewards.lastEarned;
+}
+
+function creditElapsedFocusMinutes() {
+  if (!state.running || !sessionStartedAt) return 0;
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 60000));
+  const deltaMinutes = elapsedMinutes - sessionCreditedMinutes;
+  if (deltaMinutes <= 0) return 0;
+  sessionCreditedMinutes = elapsedMinutes;
+  state.rewards = awardFocusTime(state.rewards, deltaMinutes * 60);
+  sessionEarnedPoints += state.rewards.lastEarned;
   ensureEntertainmentLedgerCurrent();
-  state.entertainmentLedger.focusedMinutes += sessionDurationMinutes;
+  state.entertainmentLedger.focusedMinutes += deltaMinutes;
   saveRewards();
   saveEntertainmentLedger();
-  void reconcilePenaltyLock();
+  if (state.rewards.lastEarned > 0) void reconcilePenaltyLock();
   return state.rewards.lastEarned;
 }
 
@@ -1901,11 +1920,13 @@ async function monitorTick() {
   if (!state.running) return;
 
   state.remainingSeconds = Math.max(0, Math.ceil((sessionEndsAt - Date.now()) / 1000));
+  creditElapsedFocusMinutes();
   if (state.remainingSeconds === 0) {
-    const earned = awardCompletedSession();
+    awardCompletedSession();
+    const earned = sessionEarnedPoints;
     revealColdTurkeyPassword("任务自然完成，可用密码提前停止 block", "focus");
-    stopSession(`本轮完成，获得 ${earned} 点`);
-    notify("本轮完成", `获得 ${earned} 点。先休息一下，再决定下一轮。`);
+    stopSession(earned > 0 ? `本轮完成，本轮累计获得 ${earned} 点` : "本轮完成，专注分钟已累计入账");
+    notify("本轮完成", earned > 0 ? `本轮累计获得 ${earned} 点。` : "专注分钟已累计入账。");
     return;
   }
 
@@ -1980,6 +2001,9 @@ async function monitorTick() {
 function stopSession(message = "已停止") {
   clearInterval(monitorTimer);
   monitorTimer = null;
+  sessionStartedAt = 0;
+  sessionCreditedMinutes = 0;
+  sessionEarnedPoints = 0;
   state = {
     ...state,
     running: false,
@@ -1996,6 +2020,7 @@ function stopSession(message = "已停止") {
 }
 
 function forceStopSession(reason, message) {
+  creditElapsedFocusMinutes();
   deductForForcedExit(reason);
   const password = revealColdTurkeyPassword(
     "已强制结束，本轮 Cold Turkey 密码已公布；解除后请确认",
@@ -2148,6 +2173,9 @@ ipcMain.handle("session:start", async (_, config) => {
       : "未安装 Cold Turkey，已跳过密码锁";
   }
   sessionDurationMinutes = durationMinutes;
+  sessionStartedAt = Date.now();
+  sessionCreditedMinutes = 0;
+  sessionEarnedPoints = 0;
   sessionDistractionCount = 0;
   lastTextAiCheckAt = 0;
   lastVisionAiCheckAt = 0;
@@ -2298,14 +2326,20 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
   try {
     const review = await evaluateCompletionEvidence(evidence);
     if (review.accepted) {
+      creditElapsedFocusMinutes();
+      awardCompletedSession();
+      const earned = sessionEarnedPoints;
       addHistory({
         at: new Date().toISOString(),
         verdict: "completion",
         reason: `完成证据通过：${review.reason}`
       });
       const password = revealColdTurkeyPassword("证据通过，可用密码提前停止 block", "focus");
-      stopSession(`证据通过：${review.reason}`);
+      stopSession(earned > 0
+        ? `证据通过：${review.reason}；本轮累计获得 ${earned} 点`
+        : `证据通过：${review.reason}；专注分钟已累计入账`);
       review.coldTurkeyPassword = password;
+      review.earned = earned;
     } else {
       state.status = `证据未通过：${review.reason}`;
       broadcast();
