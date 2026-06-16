@@ -1,5 +1,12 @@
 const MAX_DAILY_PLAN_ITEMS = 12;
 const MAX_EVIDENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const PLACEHOLDER_TITLES = new Set([
+  "任务名",
+  "具体行动",
+  "行动项",
+  "title",
+  "task"
+]);
 
 function firstString(source, keys) {
   for (const key of keys) {
@@ -51,7 +58,12 @@ function normalizePlanItems(items = []) {
       completed: Boolean(item.completed),
       completedAt: Math.max(0, Number(item.completedAt || 0))
     };
-  }).filter((item) => item.title);
+  }).filter((item) => {
+    const title = item.title.trim().toLowerCase();
+    if (!title) return false;
+    if (PLACEHOLDER_TITLES.has(title)) return false;
+    return true;
+  });
 }
 
 function appendPlanItems(existingItems = [], newItems = []) {

@@ -80,14 +80,29 @@ function extractFirstJsonObject(text) {
   return "";
 }
 
-function parseJsonObjectFromText(text) {
-  const json = extractFirstJsonObject(text);
-  if (!json) return null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
+function extractJsonObjects(text) {
+  const source = String(text || "");
+  const objects = [];
+  let offset = 0;
+  while (offset < source.length) {
+    const chunk = extractFirstJsonObject(source.slice(offset));
+    if (!chunk) break;
+    objects.push(chunk);
+    offset += source.slice(offset).indexOf(chunk) + chunk.length;
   }
+  return objects;
+}
+
+function parseJsonObjectFromText(text) {
+  const candidates = extractJsonObjects(text);
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    try {
+      return JSON.parse(candidates[index]);
+    } catch {
+      // Try the next earlier JSON-looking object.
+    }
+  }
+  return null;
 }
 
 function completionTokenBody(maxOutputTokens, parameter = "max_completion_tokens") {
@@ -106,7 +121,7 @@ function isQwenCompatibleRequest(baseUrl, model) {
 
 function qwenThinkingBody(baseUrl, model) {
   return isQwenCompatibleRequest(baseUrl, model)
-    ? { extra_body: { enable_thinking: false } }
+    ? { enable_thinking: false }
     : {};
 }
 
@@ -132,6 +147,7 @@ module.exports = {
   compatibleEndpoint,
   extractChatCompletionText,
   extractFirstJsonObject,
+  extractJsonObjects,
   isQwenCompatibleRequest,
   parseJsonObjectFromText,
   qwenThinkingBody,

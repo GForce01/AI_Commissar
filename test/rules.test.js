@@ -18,6 +18,7 @@ const {
   compatibleEndpoint,
   extractChatCompletionText,
   extractFirstJsonObject,
+  extractJsonObjects,
   isQwenCompatibleRequest,
   parseJsonObjectFromText,
   qwenThinkingBody,
@@ -103,6 +104,15 @@ test("daily plan items accept common Chinese model fields", () => {
   assert.equal(items[0].title, "整理 Qwen 接入问题");
   assert.equal(items[0].details, "列出错误、原因和修复方案");
   assert.equal(items[0].suggestedTime, "上午");
+});
+
+test("daily plan normalization drops schema placeholders", () => {
+  const items = normalizePlanItems([
+    { title: "具体行动", details: "可核验完成标准", suggestedTime: "建议时段或时长" },
+    { title: "完成一小时 AI 课程", details: "提交课程进度截图和学习笔记", suggestedTime: "10:00 - 11:00" }
+  ]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, "完成一小时 AI 课程");
 });
 
 test("new daily goals append without replacing or duplicating existing items", () => {
@@ -364,7 +374,7 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
   assert.equal(isQwenCompatibleRequest("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-plus"), true);
   assert.equal(isQwenCompatibleRequest("https://api.openai.com/v1", "gpt-4o-mini"), false);
   assert.deepEqual(qwenThinkingBody("https://dashscope.aliyuncs.com/api/v1", "qwen3.7-plus"), {
-    extra_body: { enable_thinking: false }
+    enable_thinking: false
   });
   assert.deepEqual(qwenThinkingBody("https://api.openai.com/v1", "gpt-4o-mini"), {});
   assert.equal(alternateTokenParameter(
@@ -378,11 +388,12 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
 });
 
 test("JSON objects are extracted from chatty model responses", () => {
-  const text = '好的，结果如下：{"accepted":false,"reason":"证据里有 { 花括号 } 但不足"}\n请继续补充。';
+  const text = '示例：{"accepted":true,"reason":"示例"}\n好的，结果如下：{"accepted":false,"reason":"证据里有 { 花括号 } 但不足"}\n请继续补充。';
   assert.equal(
     extractFirstJsonObject(text),
-    '{"accepted":false,"reason":"证据里有 { 花括号 } 但不足"}'
+    '{"accepted":true,"reason":"示例"}'
   );
+  assert.equal(extractJsonObjects(text).length, 2);
   assert.deepEqual(parseJsonObjectFromText(text), {
     accepted: false,
     reason: "证据里有 { 花括号 } 但不足"
