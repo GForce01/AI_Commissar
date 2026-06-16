@@ -1,6 +1,27 @@
 const MAX_DAILY_PLAN_ITEMS = 12;
 const MAX_EVIDENCE_IMAGE_BYTES = 5 * 1024 * 1024;
 
+function firstString(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
+}
+
+function generatedPlanItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.tasks)) return payload.tasks;
+  if (Array.isArray(payload?.plan)) return payload.plan;
+  if (Array.isArray(payload?.["计划"])) return payload["计划"];
+  if (Array.isArray(payload?.dailyPlan)) return payload.dailyPlan;
+  if (Array.isArray(payload?.plan?.items)) return payload.plan.items;
+  if (Array.isArray(payload?.dailyPlan?.items)) return payload.dailyPlan.items;
+  if (Array.isArray(payload?.["计划"]?.items)) return payload["计划"].items;
+  return [];
+}
+
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -10,14 +31,27 @@ function localDateKey(date = new Date()) {
 
 function normalizePlanItems(items = []) {
   if (!Array.isArray(items)) return [];
-  return items.slice(0, MAX_DAILY_PLAN_ITEMS).map((item, index) => ({
-    id: String(item.id || `plan-${index + 1}`),
-    title: String(item.title || "").trim().slice(0, 120),
-    details: String(item.details || "").trim().slice(0, 300),
-    suggestedTime: String(item.suggestedTime || "").trim().slice(0, 40),
-    completed: Boolean(item.completed),
-    completedAt: Math.max(0, Number(item.completedAt || 0))
-  })).filter((item) => item.title);
+  return items.slice(0, MAX_DAILY_PLAN_ITEMS).map((item, index) => {
+    const title = firstString(item, [
+      "title", "name", "task", "action", "任务名", "任务", "标题", "行动项"
+    ]);
+    const details = firstString(item, [
+      "details", "detail", "description", "criteria", "completionCriteria",
+      "完成标准", "说明", "细节", "验收标准"
+    ]);
+    const suggestedTime = firstString(item, [
+      "suggestedTime", "time", "duration", "suggested_time",
+      "建议时间", "建议时段", "时长"
+    ]);
+    return {
+      id: String(item.id || `plan-${index + 1}`),
+      title: title.trim().slice(0, 120),
+      details: details.trim().slice(0, 300),
+      suggestedTime: suggestedTime.trim().slice(0, 40),
+      completed: Boolean(item.completed),
+      completedAt: Math.max(0, Number(item.completedAt || 0))
+    };
+  }).filter((item) => item.title);
 }
 
 function appendPlanItems(existingItems = [], newItems = []) {
@@ -75,6 +109,7 @@ module.exports = {
   MAX_DAILY_PLAN_ITEMS,
   appendPlanItems,
   emptyDailyPlan,
+  generatedPlanItems,
   localDateKey,
   normalizeDailyPlan,
   normalizePlanItems,

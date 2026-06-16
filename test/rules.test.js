@@ -32,6 +32,7 @@ const { normalizePreferences } = require("../src/settings");
 const {
   appendPlanItems,
   emptyDailyPlan,
+  generatedPlanItems,
   localDateKey,
   normalizeDailyPlan,
   normalizePlanItems,
@@ -85,6 +86,23 @@ test("daily plan items are bounded and normalized", () => {
   })));
   assert.equal(items.length, 12);
   assert.equal(items[0].completed, false);
+});
+
+test("daily plan items accept common Chinese model fields", () => {
+  const payload = {
+    "计划": {
+      items: [{
+        "任务名": "整理 Qwen 接入问题",
+        "完成标准": "列出错误、原因和修复方案",
+        "建议时间": "上午"
+      }]
+    }
+  };
+  const items = normalizePlanItems(generatedPlanItems(payload));
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, "整理 Qwen 接入问题");
+  assert.equal(items[0].details, "列出错误、原因和修复方案");
+  assert.equal(items[0].suggestedTime, "上午");
 });
 
 test("new daily goals append without replacing or duplicating existing items", () => {
