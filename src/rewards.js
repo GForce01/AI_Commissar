@@ -22,6 +22,7 @@ const RANKS = [
 const RAPID_PENALTY_WINDOW_MS = 60 * 60 * 1000;
 const RAPID_PENALTY_COUNT = 5;
 const PENAL_BATTALION_MS = 24 * 60 * 60 * 1000;
+const FOCUS_REWARD_SECONDS = 5 * 60;
 
 function calculateReward(durationMinutes) {
   return Math.max(0, Math.floor(Number(durationMinutes || 0) / 5));
@@ -42,6 +43,7 @@ function normalizeRewards(saved = {}, now = Date.now()) {
   return {
     points,
     completedSessions: Math.max(0, Number(saved.completedSessions || 0)),
+    focusRewardRemainderSeconds: Math.max(0, Math.floor(Number(saved.focusRewardRemainderSeconds || 0))),
     rank: displayRank(points, punishmentUntil, now),
     lastEarned: Math.max(0, Number(saved.lastEarned || 0)),
     lastDeducted: Math.max(0, Number(saved.lastDeducted || 0)),
@@ -88,6 +90,24 @@ function applyForcedExitPenalty(profile, now = Date.now(), amount = 3) {
     current = applyDistractionPenalty(current, now + index);
   }
   return current;
+}
+
+function awardFocusTime(profile, elapsedSeconds, now = Date.now()) {
+  const current = normalizeRewards(profile, now);
+  const totalSeconds = current.focusRewardRemainderSeconds
+    + Math.max(0, Math.floor(Number(elapsedSeconds) || 0));
+  const earned = Math.floor(totalSeconds / FOCUS_REWARD_SECONDS);
+  const points = current.points + earned;
+  const recoveredFromPrivatePenalty = current.points < 0 && points >= 0 && current.punishmentUntil <= now;
+
+  return normalizeRewards({
+    ...current,
+    points,
+    focusRewardRemainderSeconds: totalSeconds % FOCUS_REWARD_SECONDS,
+    lastEarned: earned,
+    lastDeducted: 0,
+    punishmentReason: recoveredFromPrivatePenalty ? "" : current.punishmentReason
+  }, now);
 }
 
 function awardSession(profile, durationMinutes, now = Date.now()) {
@@ -146,10 +166,12 @@ module.exports = {
   applyDistractionPenalty,
   applyForcedExitPenalty,
   awardDailyPlanItem,
+  awardFocusTime,
   awardSession,
   calculateReward,
   displayRank,
   entertainmentCost,
+  FOCUS_REWARD_SECONDS,
   normalizeRewards,
   rankForPoints,
   redeemEntertainment

@@ -63,6 +63,7 @@ const {
   applyDistractionPenalty,
   applyForcedExitPenalty,
   awardDailyPlanItem,
+  awardFocusTime,
   awardSession,
   calculateReward,
   entertainmentCost,
@@ -287,6 +288,23 @@ test("completed sessions earn points by duration", () => {
   assert.equal(calculateReward(25), 5);
   assert.equal(calculateReward(9), 1);
   assert.equal(calculateReward(4), 0);
+});
+
+test("focus time earns points cumulatively across sessions", () => {
+  const first = awardFocusTime({ points: 0 }, 4 * 60);
+  assert.equal(first.points, 0);
+  assert.equal(first.focusRewardRemainderSeconds, 4 * 60);
+  assert.equal(first.lastEarned, 0);
+
+  const second = awardFocusTime(first, 60);
+  assert.equal(second.points, 1);
+  assert.equal(second.focusRewardRemainderSeconds, 0);
+  assert.equal(second.lastEarned, 1);
+
+  const third = awardFocusTime(second, 11 * 60);
+  assert.equal(third.points, 3);
+  assert.equal(third.focusRewardRemainderSeconds, 60);
+  assert.equal(third.lastEarned, 2);
 });
 
 test("all Soviet ranks progress in the requested order", () => {
