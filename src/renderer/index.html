@@ -50,7 +50,7 @@
           <summary>通用 OpenAI 格式 API</summary>
           <p class="hint integration-toggle">支持提供 <code>/v1/chat/completions</code> 的服务。文字、视觉和语音可使用不同模型；语音模型留空则停用 AI 语音。</p>
           <div class="two">
-            <label>服务名称
+            <label>服务显示名称
               <input id="apiProviderName" value="OpenAI" placeholder="例如 OpenRouter">
             </label>
             <label>文字模型
@@ -63,8 +63,16 @@
               <button id="copyTextModelToVisionButton" class="secondary" type="button">同文字模型</button>
             </span>
           </label>
-          <label>API Base URL
-            <input id="apiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
+          <div class="two">
+            <label>文字 API Base URL
+              <input id="textApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
+            </label>
+            <label>视觉 API Base URL
+              <input id="visionApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
+            </label>
+          </div>
+          <label>语音 API Base URL
+            <input id="ttsApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
           </label>
           <label>API Key
             <input id="compatibleApiKey" type="password" autocomplete="off" placeholder="留空不会覆盖已经保存的 Key">

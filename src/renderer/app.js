@@ -11,7 +11,9 @@ const elements = {
   aiEnabled: document.querySelector("#aiEnabled"),
   visionQuality: document.querySelector("#visionQuality"),
   apiProviderName: document.querySelector("#apiProviderName"),
-  apiBaseUrl: document.querySelector("#apiBaseUrl"),
+  textApiBaseUrl: document.querySelector("#textApiBaseUrl"),
+  visionApiBaseUrl: document.querySelector("#visionApiBaseUrl"),
+  ttsApiBaseUrl: document.querySelector("#ttsApiBaseUrl"),
   compatibleApiKey: document.querySelector("#compatibleApiKey"),
   ttsModel: document.querySelector("#ttsModel"),
   saveCompatibleApiKey: document.querySelector("#saveCompatibleApiKeyButton"),
@@ -133,7 +135,10 @@ function collectPreferences() {
     visionModel: elements.visionModel.value,
     aiModel: elements.textModel.value,
     apiProviderName: elements.apiProviderName.value,
-    apiBaseUrl: elements.apiBaseUrl.value,
+    apiBaseUrl: elements.textApiBaseUrl.value,
+    textApiBaseUrl: elements.textApiBaseUrl.value,
+    visionApiBaseUrl: elements.visionApiBaseUrl.value,
+    ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
     ttsModel: elements.ttsModel.value,
     allowedKeywords: elements.allowed.value,
     blockedKeywords: elements.blocked.value,
@@ -166,7 +171,9 @@ function hydratePreferences(preferences = {}) {
   elements.textModel.value = preferences.textModel || preferences.aiModel || elements.textModel.value;
   elements.visionModel.value = preferences.visionModel || preferences.aiModel || elements.textModel.value;
   elements.apiProviderName.value = preferences.apiProviderName || "OpenAI";
-  elements.apiBaseUrl.value = preferences.apiBaseUrl || "https://api.openai.com/v1";
+  elements.textApiBaseUrl.value = preferences.textApiBaseUrl || preferences.apiBaseUrl || "https://api.openai.com/v1";
+  elements.visionApiBaseUrl.value = preferences.visionApiBaseUrl || preferences.apiBaseUrl || elements.textApiBaseUrl.value;
+  elements.ttsApiBaseUrl.value = preferences.ttsApiBaseUrl || preferences.apiBaseUrl || elements.textApiBaseUrl.value;
   elements.ttsModel.value = preferences.ttsModel || "";
   elements.allowed.value = preferences.allowedKeywords ?? "";
   elements.blocked.value = preferences.blockedKeywords ?? "";
@@ -340,7 +347,9 @@ function render(state) {
   elements.visionModel.disabled = state.running || entertainmentActive;
   elements.copyTextModelToVision.disabled = state.running || entertainmentActive;
   elements.apiProviderName.disabled = state.running || entertainmentActive;
-  elements.apiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.textApiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.visionApiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.ttsApiBaseUrl.disabled = state.running || entertainmentActive;
   elements.ttsModel.disabled = state.running || entertainmentActive;
   const ttsAvailable = Boolean(elements.ttsModel.value.trim());
   if (!ttsAvailable && !state.running && !entertainmentActive) elements.voiceEnabled.checked = false;
@@ -436,6 +445,9 @@ elements.form.addEventListener("submit", async (event) => {
     visionModel: elements.visionModel.value,
     aiModel: elements.textModel.value,
     ttsModel: elements.ttsModel.value,
+    textApiBaseUrl: elements.textApiBaseUrl.value,
+    visionApiBaseUrl: elements.visionApiBaseUrl.value,
+    ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
     allowedKeywords: elements.allowed.value,
     blockedKeywords: elements.blocked.value,
     autoDetectGames: elements.autoDetectGames.checked,
@@ -464,6 +476,9 @@ elements.startEntertainment.addEventListener("click", async () => {
     visionModel: elements.visionModel.value,
     aiModel: elements.textModel.value,
     ttsModel: elements.ttsModel.value,
+    textApiBaseUrl: elements.textApiBaseUrl.value,
+    visionApiBaseUrl: elements.visionApiBaseUrl.value,
+    ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
     visionQuality: elements.visionQuality.value,
     ollamaEnabled: elements.ollamaEnabled.checked,
     ollamaVisionModel: elements.ollamaVisionModel.value,
@@ -497,7 +512,9 @@ elements.copyTextModelToVision.addEventListener("click", () => {
   elements.textModel,
   elements.visionModel,
   elements.apiProviderName,
-  elements.apiBaseUrl,
+  elements.textApiBaseUrl,
+  elements.visionApiBaseUrl,
+  elements.ttsApiBaseUrl,
   elements.ttsModel,
   elements.allowed,
   elements.blocked,

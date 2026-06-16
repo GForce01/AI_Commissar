@@ -735,9 +735,10 @@ function getCompatibleApiConfig(config = state.config || state.settings.preferen
   ).trim();
   return {
     providerName: String(config?.apiProviderName || preferences.apiProviderName || "OpenAI").trim(),
-    baseUrl: normalizeApiBaseUrl(
-      config?.apiBaseUrl || preferences.apiBaseUrl
-    ),
+    baseUrl: normalizeApiBaseUrl(config?.textApiBaseUrl || config?.apiBaseUrl || preferences.textApiBaseUrl || preferences.apiBaseUrl),
+    textBaseUrl: normalizeApiBaseUrl(config?.textApiBaseUrl || config?.apiBaseUrl || preferences.textApiBaseUrl || preferences.apiBaseUrl),
+    visionBaseUrl: normalizeApiBaseUrl(config?.visionApiBaseUrl || config?.apiBaseUrl || preferences.visionApiBaseUrl || preferences.apiBaseUrl),
+    ttsBaseUrl: normalizeApiBaseUrl(config?.ttsApiBaseUrl || config?.apiBaseUrl || preferences.ttsApiBaseUrl || preferences.apiBaseUrl),
     textModel,
     visionModel: String(
       config?.visionModel || config?.aiModel || preferences.visionModel || preferences.aiModel || textModel
@@ -1051,7 +1052,8 @@ async function requestAiClassification(
   const messageContent = modality === "text"
     ? convertedContent.map((item) => item.text || "").join("\n")
     : convertedContent;
-  const endpoint = compatibleEndpoint(api.baseUrl, "chat/completions");
+  const baseUrl = modality === "vision" ? api.visionBaseUrl : api.textBaseUrl;
+  const endpoint = compatibleEndpoint(baseUrl, "chat/completions");
   const model = modality === "vision" ? api.visionModel : api.textModel;
   if (!model) throw new Error(`${modality === "vision" ? "视觉" : "文字"}模型未配置`);
   const request = async (tokenParameter) => fetch(endpoint, {
@@ -1544,13 +1546,13 @@ async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
   fs.mkdirSync(cacheDir, { recursive: true });
   const personalityPrompt = state.settings.personalityPrompt;
   const hash = crypto.createHash("sha256")
-    .update(`${api.baseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${personalityPrompt}:${text}`)
+    .update(`${api.ttsBaseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${personalityPrompt}:${text}`)
     .digest("hex")
     .slice(0, 20);
   const audioPath = path.join(cacheDir, `${hash}.wav`);
 
   if (!fs.existsSync(audioPath)) {
-    const response = await fetch(compatibleEndpoint(api.baseUrl, "audio/speech"), {
+    const response = await fetch(compatibleEndpoint(api.ttsBaseUrl, "audio/speech"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${getCompatibleApiKey()}`,

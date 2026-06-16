@@ -5,6 +5,9 @@ const DEFAULT_PREFERENCES = {
   visionModel: "gpt-5.4-mini",
   apiProviderName: "OpenAI",
   apiBaseUrl: "https://api.openai.com/v1",
+  textApiBaseUrl: "https://api.openai.com/v1",
+  visionApiBaseUrl: "https://api.openai.com/v1",
+  ttsApiBaseUrl: "https://api.openai.com/v1",
   ttsModel: "",
   allowedKeywords: "",
   blockedKeywords: "",
@@ -60,7 +63,12 @@ function normalizePreferences(saved = {}) {
       saved.textModel || saved.aiModel || DEFAULT_PREFERENCES.textModel
     ).trim().slice(0, 120),
     apiProviderName: String(saved.apiProviderName || DEFAULT_PREFERENCES.apiProviderName).trim().slice(0, 60),
-    apiBaseUrl: normalizeApiBaseUrl(saved.apiBaseUrl).slice(0, 500),
+    apiBaseUrl: normalizeApiBaseUrl(saved.textApiBaseUrl || saved.apiBaseUrl).slice(0, 500),
+    textApiBaseUrl: normalizeApiBaseUrl(saved.textApiBaseUrl || saved.apiBaseUrl).slice(0, 500),
+    visionApiBaseUrl: normalizeApiBaseUrl(
+      saved.visionApiBaseUrl || saved.apiBaseUrl || saved.textApiBaseUrl
+    ).slice(0, 500),
+    ttsApiBaseUrl: normalizeApiBaseUrl(saved.ttsApiBaseUrl || saved.apiBaseUrl || saved.textApiBaseUrl).slice(0, 500),
     ttsModel: String(saved.ttsModel || "").trim().slice(0, 120),
     allowedKeywords: String(saved.allowedKeywords || ""),
     blockedKeywords: String(saved.blockedKeywords || ""),

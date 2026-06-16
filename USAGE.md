@@ -32,8 +32,10 @@ npm.cmd start
 
 在界面的“通用 OpenAI 格式 API”中填写：
 
-- 服务名称，例如 `OpenAI`、`OpenRouter` 或你的转发服务名称
-- API Base URL，例如 `https://api.openai.com/v1`
+- 服务显示名称，例如 `OpenAI`、`OpenRouter` 或你的转发服务名称；它只用于界面和错误提示
+- 文字 API Base URL，例如 `https://api.openai.com/v1`
+- 视觉 API Base URL，可以和文字相同，也可以填另一个 OpenAI-compatible 服务
+- 语音 API Base URL，可以和文字相同；如果语音模型留空则不会使用
 - API Key
 - 文字模型
 - 视觉模型

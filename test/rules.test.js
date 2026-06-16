@@ -368,7 +368,9 @@ test("saved preferences are normalized for restart restoration", () => {
     dailyPlanReminderEnabled: true,
     dailyPlanReminderTime: "08:30",
     apiProviderName: "  OpenRouter  ",
-    apiBaseUrl: "https://openrouter.ai/api/v1/",
+    textApiBaseUrl: "https://text.example/api/v1/",
+    visionApiBaseUrl: "https://vision.example/api/v1/",
+    ttsApiBaseUrl: "https://tts.example/api/v1/",
     textModel: " text-only ",
     visionModel: " vision-only ",
     ttsModel: " custom-tts ",
@@ -385,7 +387,10 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(preferences.dailyPlanReminderEnabled, true);
   assert.equal(preferences.dailyPlanReminderTime, "08:30");
   assert.equal(preferences.apiProviderName, "OpenRouter");
-  assert.equal(preferences.apiBaseUrl, "https://openrouter.ai/api/v1");
+  assert.equal(preferences.apiBaseUrl, "https://text.example/api/v1");
+  assert.equal(preferences.textApiBaseUrl, "https://text.example/api/v1");
+  assert.equal(preferences.visionApiBaseUrl, "https://vision.example/api/v1");
+  assert.equal(preferences.ttsApiBaseUrl, "https://tts.example/api/v1");
   assert.equal(preferences.textModel, "text-only");
   assert.equal(preferences.visionModel, "vision-only");
   assert.equal(preferences.aiModel, "text-only");
@@ -396,6 +401,9 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
   assert.equal(normalizePreferences({ aiModel: "legacy-model" }).visionModel, "legacy-model");
   assert.equal(normalizePreferences({ ttsModel: "   " }).ttsModel, "");
+  assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).textApiBaseUrl, "https://legacy.example/v1");
+  assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).visionApiBaseUrl, "https://legacy.example/v1");
+  assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).ttsApiBaseUrl, "https://legacy.example/v1");
 });
 
 test("entertainment time costs one point per five minutes without punishment", () => {
