@@ -36,6 +36,7 @@ npm.cmd start
 - 文字 API Base URL，例如 `https://api.openai.com/v1`
 - 视觉 API Base URL，可以和文字相同，也可以填另一个 OpenAI-compatible 服务
 - 语音 API Base URL，可以和文字相同；如果语音模型留空则不会使用
+- 语音服务：OpenAI-compatible 或 Qwen-TTS（阿里云百炼）
 - 文字 API Key
 - 视觉 API Key
 - 语音 API Key
@@ -44,6 +45,8 @@ npm.cmd start
 - 可选语音模型；留空会停用 AI 语音
 
 视觉模型旁边的“同文字模型”按钮可以一键复制文字模型名称和文字 API Base URL。视觉/语音 Key 旁边的“同文字 Key”按钮可以复制当前输入的文字 Key；如果文字 Key 已保存但不显示，也可以在后台同步已保存的文字 Key。API Key 保存后会使用 Electron 系统安全存储加密，并立即从输入框清空。它不会写入 `settings.json`，也不会提交到仓库。旧版单一 API Key 会作为升级后的默认后备，直到你分别保存新的 Key。
+
+如果选择 Qwen-TTS，应用会使用阿里云百炼非实时语音合成接口，默认 Base URL 为 `https://dashscope.aliyuncs.com/api/v1`，默认模型为 `qwen3-tts-vd`，默认 voiceID 为 `qwen-tts-vd-bailian-voice-20260616085444879-9660`。实时语音合成属于 WebSocket 流式接口，暂不适合当前的短句缓存播放流程。
 
 ## 使用本地 Ollama
 

@@ -371,9 +371,11 @@ test("saved preferences are normalized for restart restoration", () => {
     textApiBaseUrl: "https://text.example/api/v1/",
     visionApiBaseUrl: "https://vision.example/api/v1/",
     ttsApiBaseUrl: "https://tts.example/api/v1/",
+    ttsProvider: "qwen",
     textModel: " text-only ",
     visionModel: " vision-only ",
     ttsModel: " custom-tts ",
+    ttsVoice: " qwen-tts-vd-custom ",
     coldTurkeyBlockName: "  Focus Block  ",
     coldTurkeyPenaltyBlockName: "  Punishment Block  "
   });
@@ -391,16 +393,19 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(preferences.textApiBaseUrl, "https://text.example/api/v1");
   assert.equal(preferences.visionApiBaseUrl, "https://vision.example/api/v1");
   assert.equal(preferences.ttsApiBaseUrl, "https://tts.example/api/v1");
+  assert.equal(preferences.ttsProvider, "qwen");
   assert.equal(preferences.textModel, "text-only");
   assert.equal(preferences.visionModel, "vision-only");
   assert.equal(preferences.aiModel, "text-only");
   assert.equal(preferences.ttsModel, "custom-tts");
+  assert.equal(preferences.ttsVoice, "qwen-tts-vd-custom");
   assert.equal(preferences.coldTurkeyBlockName, "Focus Block");
   assert.equal(preferences.coldTurkeyPenaltyBlockName, "Punishment Block");
   assert.equal(normalizePreferences({ dailyPlanReminderTime: "29:90" }).dailyPlanReminderTime, "09:00");
   assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
   assert.equal(normalizePreferences({ aiModel: "legacy-model" }).visionModel, "legacy-model");
   assert.equal(normalizePreferences({ ttsModel: "   " }).ttsModel, "");
+  assert.equal(normalizePreferences({ ttsProvider: "unexpected" }).ttsProvider, "openai");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).textApiBaseUrl, "https://legacy.example/v1");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).visionApiBaseUrl, "https://legacy.example/v1");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).ttsApiBaseUrl, "https://legacy.example/v1");
@@ -494,8 +499,10 @@ test("entertainment model settings are normalized independently", () => {
     textModel: " custom-text ",
     visionModel: " custom-vision ",
     ttsModel: "",
+    ttsProvider: "qwen",
+    ttsApiBaseUrl: "https://dashscope.aliyuncs.com/api/v1",
     visionQuality: "standard",
-    ttsVoice: "echo",
+    ttsVoice: "qwen-tts-vd-custom",
     ttsSpeed: 1.25,
     intervalSeconds: 5
   }), {
@@ -507,12 +514,14 @@ test("entertainment model settings are normalized independently", () => {
     visionModel: "custom-vision",
     aiModel: "custom-text",
     ttsModel: "",
+    ttsProvider: "qwen",
+    ttsApiBaseUrl: "https://dashscope.aliyuncs.com/api/v1",
     visionQuality: "standard",
-    ttsVoice: "echo",
+    ttsVoice: "qwen-tts-vd-custom",
     ttsSpeed: 1.25,
     intervalSeconds: 15
   });
-  assert.equal(normalizeEntertainmentConfig({ ttsVoice: "invalid" }).ttsVoice, "onyx");
+  assert.equal(normalizeEntertainmentConfig({ ttsVoice: "qwen-custom" }).ttsVoice, "qwen-custom");
   assert.equal(normalizeTtsSpeed(0.1), 0.75);
   assert.equal(normalizeTtsSpeed(9), 1.5);
   assert.equal(normalizeTtsSpeed(""), 1.1);

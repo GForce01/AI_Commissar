@@ -8,6 +8,7 @@ const DEFAULT_PREFERENCES = {
   textApiBaseUrl: "https://api.openai.com/v1",
   visionApiBaseUrl: "https://api.openai.com/v1",
   ttsApiBaseUrl: "https://api.openai.com/v1",
+  ttsProvider: "openai",
   ttsModel: "",
   allowedKeywords: "",
   blockedKeywords: "",
@@ -69,6 +70,7 @@ function normalizePreferences(saved = {}) {
       saved.visionApiBaseUrl || saved.apiBaseUrl || saved.textApiBaseUrl
     ).slice(0, 500),
     ttsApiBaseUrl: normalizeApiBaseUrl(saved.ttsApiBaseUrl || saved.apiBaseUrl || saved.textApiBaseUrl).slice(0, 500),
+    ttsProvider: saved.ttsProvider === "qwen" ? "qwen" : "openai",
     ttsModel: String(saved.ttsModel || "").trim().slice(0, 120),
     allowedKeywords: String(saved.allowedKeywords || ""),
     blockedKeywords: String(saved.blockedKeywords || ""),
@@ -91,7 +93,8 @@ function normalizePreferences(saved = {}) {
       saved.coldTurkeyPenaltyBlockName,
       DEFAULT_PREFERENCES.coldTurkeyPenaltyBlockName
     ),
-    ttsVoice: ["onyx", "echo", "ash"].includes(saved.ttsVoice) ? saved.ttsVoice : "onyx",
+    ttsVoice: String(saved.ttsVoice || DEFAULT_PREFERENCES.ttsVoice).trim().slice(0, 180)
+      || DEFAULT_PREFERENCES.ttsVoice,
     ttsSpeed: clampNumber(saved.ttsSpeed, 0.75, 1.5, 1.1),
     entertainmentCommentaryEnabled: saved.entertainmentCommentaryEnabled !== false,
     entertainmentIntervalSeconds: clampNumber(saved.entertainmentIntervalSeconds, 15, 600, 60),

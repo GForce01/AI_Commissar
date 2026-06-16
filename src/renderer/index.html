@@ -71,9 +71,17 @@
               <input id="visionApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
             </label>
           </div>
-          <label>语音 API Base URL
-            <input id="ttsApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
-          </label>
+          <div class="two">
+            <label>语音服务
+              <select id="ttsProvider">
+                <option value="openai">OpenAI-compatible</option>
+                <option value="qwen">Qwen-TTS（阿里云百炼）</option>
+              </select>
+            </label>
+            <label>语音 API Base URL
+              <input id="ttsApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
+            </label>
+          </div>
           <label>语音模型
             <input id="ttsModel" value="" placeholder="留空则停用 AI 语音">
           </label>
@@ -153,13 +161,15 @@
           <p class="hint">需要 Cold Turkey Pro 的密码锁功能。密码只在任务完成或证据通过后显示。</p>
           <p class="third-party-disclaimer">第三方声明：本应用与 Cold Turkey 无隶属、合作或利益关系；相关屏蔽、锁定和解锁风险请自行评估，本应用不对第三方软件造成的后果负责。</p>
         </details>
+        <datalist id="ttsVoicePresets">
+          <option value="onyx">OpenAI Onyx</option>
+          <option value="echo">OpenAI Echo</option>
+          <option value="ash">OpenAI Ash</option>
+          <option value="qwen-tts-vd-bailian-voice-20260616085444879-9660">Qwen-TTS-VD 默认音色</option>
+        </datalist>
         <div class="voice-row">
           <label>政委音色
-            <select id="ttsVoice">
-              <option value="onyx">Onyx · 浑厚威严</option>
-              <option value="echo">Echo · 冷静克制</option>
-              <option value="ash">Ash · 干练锐利</option>
-            </select>
+            <input id="ttsVoice" list="ttsVoicePresets" value="onyx" placeholder="OpenAI 音色或 Qwen voiceID">
           </label>
           <label>语速
             <input id="ttsSpeed" type="number" min="0.75" max="1.5" step="0.05" value="1.1">

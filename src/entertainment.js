@@ -24,7 +24,9 @@ function normalizeEntertainmentConfig(config = {}) {
     visionModel: String(config.visionModel || config.aiModel || config.textModel || "gpt-5.4-mini").trim(),
     aiModel: String(config.textModel || config.aiModel || "gpt-5.4-mini").trim(),
     visionQuality: normalizeVisionQuality(config.visionQuality),
-    ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
+    ttsProvider: config.ttsProvider === "qwen" ? "qwen" : "openai",
+    ttsApiBaseUrl: String(config.ttsApiBaseUrl || "").trim(),
+    ttsVoice: String(config.ttsVoice || "onyx").trim().slice(0, 180) || "onyx",
     ttsModel: String(config.ttsModel || "").trim(),
     ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
     intervalSeconds: Math.max(

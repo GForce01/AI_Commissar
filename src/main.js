@@ -747,6 +747,7 @@ function getCompatibleApiConfig(config = state.config || state.settings.preferen
     textBaseUrl: normalizeApiBaseUrl(config?.textApiBaseUrl || config?.apiBaseUrl || preferences.textApiBaseUrl || preferences.apiBaseUrl),
     visionBaseUrl: normalizeApiBaseUrl(config?.visionApiBaseUrl || config?.apiBaseUrl || preferences.visionApiBaseUrl || preferences.apiBaseUrl),
     ttsBaseUrl: normalizeApiBaseUrl(config?.ttsApiBaseUrl || config?.apiBaseUrl || preferences.ttsApiBaseUrl || preferences.apiBaseUrl),
+    ttsProvider: config?.ttsProvider === "qwen" || preferences.ttsProvider === "qwen" ? "qwen" : "openai",
     textModel,
     visionModel: String(
       config?.visionModel || config?.aiModel || preferences.visionModel || preferences.aiModel || textModel
@@ -1615,12 +1616,86 @@ async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
   broadcast();
 }
 
+function qwenTtsAudioUrl(payload) {
+  return payload?.output?.audio?.url
+    || payload?.output?.audio_url
+    || payload?.output?.url
+    || payload?.url
+    || "";
+}
+
+function qwenTtsAudioData(payload) {
+  return payload?.output?.audio?.data
+    || payload?.output?.audio_data
+    || payload?.audio?.data
+    || "";
+}
+
+async function speakWithQwenTts(text, voice, speed = 1.1) {
+  const api = getCompatibleApiConfig();
+  const apiKey = getCompatibleApiKey("tts");
+  if (!apiKey || !api.ttsModel) return;
+  const normalizedSpeed = normalizeTtsSpeed(speed);
+  const endpoint = compatibleEndpoint(api.ttsBaseUrl, "services/aigc/multimodal-generation/generation");
+  const cacheDir = path.join(app.getPath("userData"), "voice-cache");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const hash = crypto.createHash("sha256")
+    .update(`qwen:${api.ttsBaseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${text}`)
+    .digest("hex")
+    .slice(0, 20);
+  const audioPath = path.join(cacheDir, `${hash}.wav`);
+
+  if (!fs.existsSync(audioPath)) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: api.ttsModel,
+        input: {
+          text,
+          voice,
+          language_type: "Chinese"
+        }
+      })
+    });
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 500);
+      throw new Error(`Qwen-TTS ${response.status}${detail ? `：${detail}` : ""}`);
+    }
+    const payload = await response.json();
+    const audioData = qwenTtsAudioData(payload);
+    if (audioData) {
+      fs.writeFileSync(audioPath, Buffer.from(audioData, "base64"));
+    } else {
+      const audioUrl = qwenTtsAudioUrl(payload);
+      if (!audioUrl) throw new Error("Qwen-TTS 未返回音频 URL");
+      const audioResponse = await fetch(audioUrl);
+      if (!audioResponse.ok) {
+        throw new Error(`Qwen-TTS 音频下载失败 ${audioResponse.status}`);
+      }
+      fs.writeFileSync(audioPath, Buffer.from(await audioResponse.arrayBuffer()));
+    }
+  }
+
+  await playWav(audioPath);
+  recordAiUsage("speech", "Qwen-TTS", api.ttsModel);
+  broadcast();
+}
+
 async function speakCommissar(text) {
   const voice = state.config?.ttsVoice || "onyx";
   const speed = state.config?.ttsSpeed;
   const speechTask = speechQueue.then(async () => {
-    if (!getCompatibleApiKey("tts") || !getCompatibleApiConfig().ttsModel) return;
-    await speakWithOpenAi(text, voice, speed);
+    const api = getCompatibleApiConfig();
+    if (!getCompatibleApiKey("tts") || !api.ttsModel) return;
+    if (api.ttsProvider === "qwen") {
+      await speakWithQwenTts(text, voice, speed);
+    } else {
+      await speakWithOpenAi(text, voice, speed);
+    }
   }).catch((error) => {
     state.status = `AI 语音暂不可用：${error.message}`;
     broadcast();
@@ -2111,13 +2186,18 @@ ipcMain.handle("cold-turkey:reveal-previous", () => {
   return publicState();
 });
 ipcMain.handle("voice:preview", async (_, options = {}) => {
-  const selectedVoice = ["onyx", "echo", "ash"].includes(options.voice) ? options.voice : "onyx";
+  const selectedVoice = String(options.voice || state.settings.preferences.ttsVoice || "onyx").trim().slice(0, 180) || "onyx";
   const previousVoice = state.config?.ttsVoice;
   const previousSpeed = state.config?.ttsSpeed;
+  const previousProvider = state.config?.ttsProvider;
+  const previousBaseUrl = state.config?.ttsApiBaseUrl;
+  const previousModel = state.config?.ttsModel;
   state.config = {
     ...(state.config || {}),
     ttsVoice: selectedVoice,
     ttsSpeed: normalizeTtsSpeed(options.speed),
+    ttsProvider: options.ttsProvider === "qwen" ? "qwen" : "openai",
+    ttsApiBaseUrl: String(options.ttsApiBaseUrl || state.settings.preferences.ttsApiBaseUrl || "").trim(),
     ttsModel: String(options.ttsModel ?? state.settings.preferences.ttsModel ?? "").trim()
   };
   await speakCommissar(await generateCommissarLine());
@@ -2125,6 +2205,12 @@ ipcMain.handle("voice:preview", async (_, options = {}) => {
   else delete state.config.ttsVoice;
   if (previousSpeed) state.config.ttsSpeed = previousSpeed;
   else delete state.config.ttsSpeed;
+  if (previousProvider) state.config.ttsProvider = previousProvider;
+  else delete state.config.ttsProvider;
+  if (previousBaseUrl) state.config.ttsApiBaseUrl = previousBaseUrl;
+  else delete state.config.ttsApiBaseUrl;
+  if (previousModel) state.config.ttsModel = previousModel;
+  else delete state.config.ttsModel;
   return publicState();
 });
 ipcMain.handle("settings:personality:save", (_, prompt) => {

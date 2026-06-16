@@ -13,6 +13,7 @@ const elements = {
   apiProviderName: document.querySelector("#apiProviderName"),
   textApiBaseUrl: document.querySelector("#textApiBaseUrl"),
   visionApiBaseUrl: document.querySelector("#visionApiBaseUrl"),
+  ttsProvider: document.querySelector("#ttsProvider"),
   ttsApiBaseUrl: document.querySelector("#ttsApiBaseUrl"),
   textCompatibleApiKey: document.querySelector("#textCompatibleApiKey"),
   visionCompatibleApiKey: document.querySelector("#visionCompatibleApiKey"),
@@ -146,6 +147,7 @@ function collectPreferences() {
     apiBaseUrl: elements.textApiBaseUrl.value,
     textApiBaseUrl: elements.textApiBaseUrl.value,
     visionApiBaseUrl: elements.visionApiBaseUrl.value,
+    ttsProvider: elements.ttsProvider.value,
     ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
     ttsModel: elements.ttsModel.value,
     allowedKeywords: elements.allowed.value,
@@ -181,6 +183,7 @@ function hydratePreferences(preferences = {}) {
   elements.apiProviderName.value = preferences.apiProviderName || "OpenAI";
   elements.textApiBaseUrl.value = preferences.textApiBaseUrl || preferences.apiBaseUrl || "https://api.openai.com/v1";
   elements.visionApiBaseUrl.value = preferences.visionApiBaseUrl || preferences.apiBaseUrl || elements.textApiBaseUrl.value;
+  elements.ttsProvider.value = preferences.ttsProvider || "openai";
   elements.ttsApiBaseUrl.value = preferences.ttsApiBaseUrl || preferences.apiBaseUrl || elements.textApiBaseUrl.value;
   elements.ttsModel.value = preferences.ttsModel || "";
   elements.allowed.value = preferences.allowedKeywords ?? "";
@@ -205,6 +208,31 @@ function hydratePreferences(preferences = {}) {
   elements.entertainmentDuration.value = preferences.entertainmentDurationMinutes ?? 30;
   elements.dailyPlanReminderEnabled.checked = Boolean(preferences.dailyPlanReminderEnabled);
   elements.dailyPlanReminderTime.value = preferences.dailyPlanReminderTime || "09:00";
+}
+
+function applyTtsProviderDefaults() {
+  const provider = elements.ttsProvider.value;
+  if (provider === "qwen") {
+    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === "https://api.openai.com/v1") {
+      elements.ttsApiBaseUrl.value = "https://dashscope.aliyuncs.com/api/v1";
+    }
+    if (!elements.ttsModel.value.trim()) {
+      elements.ttsModel.value = "qwen3-tts-vd";
+    }
+    if (!elements.ttsVoice.value.trim() || ["onyx", "echo", "ash"].includes(elements.ttsVoice.value.trim())) {
+      elements.ttsVoice.value = "qwen-tts-vd-bailian-voice-20260616085444879-9660";
+    }
+  } else {
+    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === "https://dashscope.aliyuncs.com/api/v1") {
+      elements.ttsApiBaseUrl.value = "https://api.openai.com/v1";
+    }
+    if (elements.ttsModel.value.trim() === "qwen3-tts-vd") {
+      elements.ttsModel.value = "";
+    }
+    if (elements.ttsVoice.value.trim().startsWith("qwen-tts-vd-")) {
+      elements.ttsVoice.value = "onyx";
+    }
+  }
 }
 
 function schedulePreferencesSave() {
@@ -369,6 +397,7 @@ function render(state) {
   elements.apiProviderName.disabled = state.running || entertainmentActive;
   elements.textApiBaseUrl.disabled = state.running || entertainmentActive;
   elements.visionApiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.ttsProvider.disabled = state.running || entertainmentActive;
   elements.ttsApiBaseUrl.disabled = state.running || entertainmentActive;
   elements.textCompatibleApiKey.disabled = state.running || entertainmentActive;
   elements.visionCompatibleApiKey.disabled = state.running || entertainmentActive;
@@ -480,6 +509,7 @@ elements.form.addEventListener("submit", async (event) => {
     visionModel: elements.visionModel.value,
     aiModel: elements.textModel.value,
     ttsModel: elements.ttsModel.value,
+    ttsProvider: elements.ttsProvider.value,
     textApiBaseUrl: elements.textApiBaseUrl.value,
     visionApiBaseUrl: elements.visionApiBaseUrl.value,
     ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
@@ -511,6 +541,7 @@ elements.startEntertainment.addEventListener("click", async () => {
     visionModel: elements.visionModel.value,
     aiModel: elements.textModel.value,
     ttsModel: elements.ttsModel.value,
+    ttsProvider: elements.ttsProvider.value,
     textApiBaseUrl: elements.textApiBaseUrl.value,
     visionApiBaseUrl: elements.visionApiBaseUrl.value,
     ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
@@ -536,6 +567,10 @@ elements.startEntertainmentGuard.addEventListener("click", async () => {
 elements.entertainmentDuration.addEventListener("input", () => {
   window.commissar.getState().then(render);
 });
+elements.ttsProvider.addEventListener("change", () => {
+  applyTtsProviderDefaults();
+  schedulePreferencesSave();
+});
 elements.copyTextModelToVision.addEventListener("click", () => {
   elements.visionModel.value = elements.textModel.value;
   elements.visionApiBaseUrl.value = elements.textApiBaseUrl.value;
@@ -550,6 +585,7 @@ elements.copyTextModelToVision.addEventListener("click", () => {
   elements.apiProviderName,
   elements.textApiBaseUrl,
   elements.visionApiBaseUrl,
+  elements.ttsProvider,
   elements.ttsApiBaseUrl,
   elements.ttsModel,
   elements.allowed,
@@ -608,6 +644,8 @@ elements.previewVoice.addEventListener("click", async () => {
   render(await window.commissar.previewVoice({
     voice: elements.ttsVoice.value,
     speed: elements.ttsSpeed.value,
+    ttsProvider: elements.ttsProvider.value,
+    ttsApiBaseUrl: elements.ttsApiBaseUrl.value,
     ttsModel: elements.ttsModel.value
   }));
   elements.previewVoice.disabled = false;
