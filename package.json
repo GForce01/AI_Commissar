@@ -1,6 +1,6 @@
 {
   "name": "ai-commissar",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "AI Commissar, a local-first focus supervisor for Windows.",
   "main": "src/main.js",
