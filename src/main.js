@@ -1499,7 +1499,8 @@ async function generateDailyPlan(sourceTasks) {
       : "将内容整理为 3 至 10 个今天可以完成、边界清晰、可由文字或截图自行证明完成的行动项。",
     "不要擅自加入用户没有要求的大型目标。可以合理排序，并给出简短执行说明和建议时间。",
     "完成标准必须能由用户自行提交的截图、文件位置、数量、运行结果或笔记证明。",
-    '只返回 JSON：{"items":[{"title":"任务名","details":"完成标准","suggestedTime":"建议时段或时长"}]}。'
+    '只返回 JSON，结构为：{"items":[{"title":"具体行动","details":"可核验完成标准","suggestedTime":"建议时段或时长"}]}。',
+    "不要照抄字段说明，不要把“任务名”“具体行动”“完成标准”“可核验完成标准”“建议时段或时长”当作内容。"
   ].join("\n");
   const text = await requestTextModel(prompt, {
     maxOutputTokens: 900,
