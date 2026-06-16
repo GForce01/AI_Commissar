@@ -704,6 +704,7 @@ elements.cancelStop.addEventListener("click", () => elements.stopModal.classList
 elements.submitEvidence.addEventListener("click", async () => {
   elements.submitEvidence.disabled = true;
   elements.submitEvidence.textContent = "正在审查...";
+  await window.commissar.savePreferences(collectPreferences());
   const result = await window.commissar.requestStop(elements.completionEvidence.value);
   render(result);
   elements.stopReviewMessage.textContent = result.stopReview?.reason || "";
@@ -803,6 +804,7 @@ elements.checkinButton.addEventListener("click", async () => {
 elements.generateDailyPlan.addEventListener("click", async () => {
   elements.generateDailyPlan.disabled = true;
   elements.generateDailyPlan.textContent = "正在制定...";
+  await window.commissar.savePreferences(collectPreferences());
   const result = await window.commissar.generateDailyPlan(elements.dailyPlanInput.value);
   render(result);
   if (!result.dailyPlanError) elements.dailyPlanInput.value = "";
@@ -833,6 +835,7 @@ elements.dailyPlanEvidence.addEventListener("paste", async (event) => {
 elements.submitDailyPlanEvidence.addEventListener("click", async () => {
   elements.submitDailyPlanEvidence.disabled = true;
   elements.submitDailyPlanEvidence.textContent = "正在审核...";
+  await window.commissar.savePreferences(collectPreferences());
   const result = await window.commissar.completeDailyPlanItem(
     selectedDailyPlanItemId,
     elements.dailyPlanEvidence.value,

@@ -43,6 +43,53 @@ function summarizeCompatibleResponse(payload = {}) {
   return String(summary || "").slice(0, 800);
 }
 
+function extractFirstJsonObject(text) {
+  const source = String(text || "");
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (start < 0) {
+      if (char === "{") {
+        start = index;
+        depth = 1;
+      }
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  return "";
+}
+
+function parseJsonObjectFromText(text) {
+  const json = extractFirstJsonObject(text);
+  if (!json) return null;
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 function completionTokenBody(maxOutputTokens, parameter = "max_completion_tokens") {
   const tokens = Math.max(1, Number(maxOutputTokens) || 120);
   return { [parameter]: tokens };
@@ -84,7 +131,9 @@ module.exports = {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  extractFirstJsonObject,
   isQwenCompatibleRequest,
+  parseJsonObjectFromText,
   qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl

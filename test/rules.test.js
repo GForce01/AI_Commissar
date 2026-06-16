@@ -17,7 +17,9 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  extractFirstJsonObject,
   isQwenCompatibleRequest,
+  parseJsonObjectFromText,
   qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl
@@ -355,6 +357,18 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
     "Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead.",
     "max_tokens"
   ), "max_completion_tokens");
+});
+
+test("JSON objects are extracted from chatty model responses", () => {
+  const text = '好的，结果如下：{"accepted":false,"reason":"证据里有 { 花括号 } 但不足"}\n请继续补充。';
+  assert.equal(
+    extractFirstJsonObject(text),
+    '{"accepted":false,"reason":"证据里有 { 花括号 } 但不足"}'
+  );
+  assert.deepEqual(parseJsonObjectFromText(text), {
+    accepted: false,
+    reason: "证据里有 { 花括号 } 但不足"
+  });
 });
 
 test("Chinese blocked keywords match common English process names", () => {

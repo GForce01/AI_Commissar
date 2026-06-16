@@ -30,6 +30,7 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  parseJsonObjectFromText,
   qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl
@@ -1437,9 +1438,8 @@ async function evaluateCompletionEvidence(evidence) {
       required: ["accepted", "reason"]
     }
   });
-  const json = text.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) return { accepted: false, reason: "政委未能读懂证据，请写得更具体。" };
-  const parsed = JSON.parse(json);
+  const parsed = parseJsonObjectFromText(text);
+  if (!parsed) return { accepted: false, reason: "政委未能读懂证据，请写得更具体。" };
   return {
     accepted: parsed.accepted === true,
     reason: String(parsed.reason || "未说明理由").slice(0, 100)
@@ -1486,9 +1486,8 @@ async function generateDailyPlan(sourceTasks) {
       required: ["items"]
     }
   });
-  const json = text.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) throw new Error("AI 未能生成有效计划，请稍后重试。");
-  const parsed = JSON.parse(json);
+  const parsed = parseJsonObjectFromText(text);
+  if (!parsed) throw new Error("AI 未能生成有效计划，请稍后重试。");
   const generatedItems = normalizePlanItems(parsed.items).map((item) => ({
     ...item,
     id: crypto.randomUUID()
@@ -1540,9 +1539,8 @@ async function reviewDailyPlanEvidence(item, evidence, evidenceImageDataUrl) {
       mimeType: evidenceImage.mimeType
     })
     : await requestTextModel(prompt, { maxOutputTokens: 180, format });
-  const json = text.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) return { accepted: false, reason: "AI 未能读懂证据，请写得更具体。" };
-  const parsed = JSON.parse(json);
+  const parsed = parseJsonObjectFromText(text);
+  if (!parsed) return { accepted: false, reason: "AI 未能读懂证据，请写得更具体。" };
   return {
     accepted: parsed.accepted === true,
     reason: String(parsed.reason || "未说明理由").slice(0, 100)
@@ -1955,7 +1953,9 @@ async function monitorTick() {
   if (warningTransition.warned) {
     state.status = `首次偏离警告：${result.reason}`;
     notify("先回来一下", `你现在的任务是：${state.task}`);
-    if (state.config.voiceEnabled) void speakPersonalizedReminder();
+    if (state.config.voiceEnabled) {
+      void speakCommissar("首次偏离警告。保持警惕，风暴依然作响。现在立刻回到任务。");
+    }
   } else if (warningTransition.penalize) {
     sessionDistractionCount += 1;
     const deducted = deductForDistraction();
