@@ -503,6 +503,7 @@ elements.entertainmentDuration.addEventListener("input", () => {
 });
 elements.copyTextModelToVision.addEventListener("click", () => {
   elements.visionModel.value = elements.textModel.value;
+  elements.visionApiBaseUrl.value = elements.textApiBaseUrl.value;
   schedulePreferencesSave();
 });
 
