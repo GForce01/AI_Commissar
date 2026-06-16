@@ -17,6 +17,8 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  isQwenCompatibleRequest,
+  qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("../src/openai-compatible");
@@ -339,6 +341,12 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
   }), "数组响应");
   assert.match(summarizeCompatibleResponse({ value: "x".repeat(400) }), /xxx/);
   assert.deepEqual(completionTokenBody(900), { max_completion_tokens: 900 });
+  assert.equal(isQwenCompatibleRequest("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-plus"), true);
+  assert.equal(isQwenCompatibleRequest("https://api.openai.com/v1", "gpt-4o-mini"), false);
+  assert.deepEqual(qwenThinkingBody("https://dashscope.aliyuncs.com/api/v1", "qwen3.7-plus"), {
+    extra_body: { enable_thinking: false }
+  });
+  assert.deepEqual(qwenThinkingBody("https://api.openai.com/v1", "gpt-4o-mini"), {});
   assert.equal(alternateTokenParameter(
     "Unsupported parameter: 'max_completion_tokens'. Use 'max_tokens' instead.",
     "max_completion_tokens"

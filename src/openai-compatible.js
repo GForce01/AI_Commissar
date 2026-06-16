@@ -48,6 +48,21 @@ function completionTokenBody(maxOutputTokens, parameter = "max_completion_tokens
   return { [parameter]: tokens };
 }
 
+function isQwenCompatibleRequest(baseUrl, model) {
+  const text = `${baseUrl || ""} ${model || ""}`.toLowerCase();
+  return text.includes("dashscope")
+    || text.includes("aliyuncs.com")
+    || text.includes("qwen")
+    || text.includes("千问")
+    || text.includes("通义");
+}
+
+function qwenThinkingBody(baseUrl, model) {
+  return isQwenCompatibleRequest(baseUrl, model)
+    ? { extra_body: { enable_thinking: false } }
+    : {};
+}
+
 function alternateTokenParameter(errorText, currentParameter) {
   const text = String(errorText || "").toLowerCase();
   if (currentParameter === "max_completion_tokens"
@@ -69,6 +84,8 @@ module.exports = {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  isQwenCompatibleRequest,
+  qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl
 };

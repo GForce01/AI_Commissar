@@ -30,6 +30,7 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  qwenThinkingBody,
   summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("./openai-compatible");
@@ -1104,6 +1105,7 @@ async function requestAiClassification(
     },
     body: JSON.stringify({
       model,
+      ...qwenThinkingBody(baseUrl, model),
       ...completionTokenBody(maxOutputTokens, tokenParameter),
       messages: [{ role: "user", content: messageContent }]
     })
