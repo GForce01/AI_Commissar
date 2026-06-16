@@ -122,7 +122,9 @@ Cold Turkey是一款功能强大的专注屏蔽软件，可以通过自定义屏
 - 惩戒营可使用单独的惩戒营 Block，默认名称为 `Games`，也可在界面修改。
 - 常规 Block 和惩戒营 Block 建议不要使用同一个 Cold Turkey Block。
 
-Cold Turkey 密码会使用 Windows 安全存储加密。最近 5 次成功使用的密码会额外保存在隐藏、限权且加密的本地恢复保险库中。
+Safe 版不使用 Cold Turkey 密码锁，而是统一发送 30 分钟计时锁。应用仍在运行且限制仍需生效时，会通过巡检继续续 30 分钟；如果应用崩溃、配置出错或用户丢失恢复信息，Cold Turkey 最多约 30 分钟后会自动解除。因为没有密码锁，Safe 版不会立刻给出可输入的解锁 key。
+
+Cold Turkey 密码会使用 Windows 安全存储加密。最近 5 次成功使用的密码会额外保存在隐藏、限权且加密的本地恢复保险库中。路径为 `%APPDATA%\ai-commissar\.system-cache\recovery.dat`，当前活动锁记录在 `%APPDATA%\ai-commissar\cold-turkey-session*.json`。Safe 版通常保存的是无密码的计时锁记录，但这些文件仍不应分享给他人。
 
 ## 可选 凛冬督学局
 

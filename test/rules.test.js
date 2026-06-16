@@ -9,6 +9,8 @@ const { activityCacheKey, parseAiVerdict, sanitizeCommentary } = require("../src
 const {
   generateColdTurkeyPassword,
   parseBlockStatus,
+  SAFE_LOCK_MINUTES,
+  safeTimedLockArgs,
   validateBlockName
 } = require("../src/cold-turkey");
 const { hasModel } = require("../src/ollama");
@@ -245,6 +247,12 @@ test("Cold Turkey password is CLI-safe and block names are validated", () => {
   assert.match(password, /^[A-Za-z0-9_-]{20,}$/);
   assert.equal(validateBlockName("AI Commissar"), "AI Commissar");
   assert.throws(() => validateBlockName('bad"name'));
+});
+
+test("Cold Turkey safe release uses 30 minute timed locks", () => {
+  assert.equal(SAFE_LOCK_MINUTES, 30);
+  assert.deepEqual(safeTimedLockArgs("AI Commissar"), ["-start", "AI Commissar", "-lock", "30"]);
+  assert.deepEqual(safeTimedLockArgs("AI Commissar", 999), ["-start", "AI Commissar", "-lock", "30"]);
 });
 
 test("completed sessions earn points by duration", () => {

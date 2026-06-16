@@ -87,6 +87,8 @@ ollama pull qwen3-vl:8b
 
 Cold Turkey 联动里有两个 Block 名称：常规 / 娱乐限制 Block 用于普通专注和 24 小时娱乐限制；惩戒营 Block 用于惩戒营强制锁，默认是 `Games`。建议两者不要使用同一个 Cold Turkey Block。
 
+Safe 版不使用 Cold Turkey 密码锁，而是统一发送 30 分钟计时锁。应用仍在运行且限制仍需生效时，会通过巡检继续续 30 分钟；如果应用崩溃、配置出错或用户丢失恢复信息，Cold Turkey 最多约 30 分钟后会自动解除。因为没有密码锁，Safe 版不会立刻给出可输入的解锁 key。
+
 24 小时娱乐限制和惩戒营 Block 锁依赖 Cold Turkey。没有 Cold Turkey 时，这两项不会启用，应用会在状态区说明原因。
 
 ## 隐私与本地数据
@@ -98,6 +100,13 @@ Cold Turkey 联动里有两个 Block 名称：常规 / 娱乐限制 Block 用于
 ```
 
 这些数据包括设置、荣誉值、每日计划、加密 API Key、Cold Turkey 加密密码记录和缓存。分享源码或发布 release 前不要把该目录打包进去。
+
+Cold Turkey 恢复文件位置：
+
+- 当前活动锁记录：`%APPDATA%\ai-commissar\cold-turkey-session*.json`
+- 最近 5 次密码保险库：`%APPDATA%\ai-commissar\.system-cache\recovery.dat`
+
+Safe 版通常保存的是无密码的计时锁记录；标准版的密码记录依赖 Electron / Windows 安全存储加密，通常只能在同一台 Windows 用户环境中解密。
 
 截图仅在启用视觉功能、娱乐 AI 点评或粘贴计划证据时发送给你配置的模型服务；应用不会把截图保存到仓库。
 

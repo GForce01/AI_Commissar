@@ -22,6 +22,8 @@ const {
   coldTurkeyAvailable,
   generateColdTurkeyPassword,
   parseBlockStatus,
+  SAFE_LOCK_MINUTES,
+  safeTimedLockArgs,
   validateBlockName
 } = require("./cold-turkey");
 const { getOllamaStatus, hasModel, ollamaChat } = require("./ollama");
@@ -364,15 +366,18 @@ function findOrphanedFocusPasswordCandidate() {
   }
 }
 
-function saveColdTurkeySecret(password, blockName, purpose = "focus") {
+function saveColdTurkeySecret(password, blockName, purpose = "focus", mode = "password") {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Windows 安全存储不可用，不能安全保存 Cold Turkey 密码");
   }
+  const secret = String(password || "");
   const payload = {
     version: 1,
     blockName,
     purpose,
-    encryptedPassword: safeStorage.encryptString(password).toString("base64"),
+    mode,
+    lockMinutes: mode === "timed" ? SAFE_LOCK_MINUTES : 0,
+    encryptedPassword: secret ? safeStorage.encryptString(secret).toString("base64") : "",
     createdAt: Date.now()
   };
   fs.writeFileSync(coldTurkeySessionPath(purpose), JSON.stringify(payload, null, 2), "utf8");
@@ -383,7 +388,12 @@ function readColdTurkeySecret(purpose = "focus") {
   return {
     blockName: validateBlockName(payload.blockName),
     purpose: ["guard", "penalty"].includes(payload.purpose) ? payload.purpose : "focus",
-    password: safeStorage.decryptString(Buffer.from(payload.encryptedPassword, "base64")),
+    password: payload.encryptedPassword
+      ? safeStorage.decryptString(Buffer.from(payload.encryptedPassword, "base64"))
+      : "",
+    mode: payload.mode === "timed" ? "timed" : "password",
+    lockMinutes: Math.max(1, Math.min(SAFE_LOCK_MINUTES, Number(payload.lockMinutes || SAFE_LOCK_MINUTES))),
+    createdAt: Math.max(0, Number(payload.createdAt || 0)),
     revealedAt: Math.max(0, Number(payload.revealedAt || 0))
   };
 }
@@ -496,13 +506,12 @@ async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
     );
   }
   const name = validateBlockName(blockName);
-  const password = generateColdTurkeyPassword();
-  saveColdTurkeySecret(password, name, purpose);
+  saveColdTurkeySecret("", name, purpose, "timed");
 
   try {
     await execFileAsync(
       COLD_TURKEY_EXECUTABLE,
-      ["-start", name, "-password", password],
+      safeTimedLockArgs(name),
       { windowsHide: true, timeout: 15000 }
     );
   } catch (error) {
@@ -510,16 +519,10 @@ async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
     throw new Error(`Cold Turkey 启动失败：${error.message}`);
   }
 
-  let vaultWarning = "";
-  try {
-    archiveColdTurkeyPassword(password, name, purpose);
-  } catch (error) {
-    vaultWarning = `；密码保险库写入失败：${error.message}`;
-  }
   if (purpose === "penalty") {
     state.coldTurkey.penaltyActive = true;
     state.coldTurkey.penaltyBlockName = name;
-    state.coldTurkey.penaltyStatus = `${name} 已因惩戒营锁定${vaultWarning}`;
+    state.coldTurkey.penaltyStatus = `${name} 已因惩戒营启用 30 分钟安全计时锁`;
   } else {
     state.coldTurkey = {
       ...state.coldTurkey,
@@ -529,7 +532,7 @@ async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
       passwordRevealed: "",
       recoveryAvailable: true,
       awaitingUnlockConfirmation: false,
-      status: `已发送密码锁定命令${vaultWarning}`
+      status: "已发送 30 分钟安全计时锁命令"
     };
   }
 }
@@ -561,13 +564,29 @@ async function reassertPenaltyLock() {
   const secret = readColdTurkeySecret("penalty");
   await execFileAsync(
     COLD_TURKEY_EXECUTABLE,
-    ["-start", secret.blockName, "-password", secret.password],
+    safeTimedLockArgs(secret.blockName),
     { windowsHide: true, timeout: 15000 }
   );
+  saveColdTurkeySecret("", secret.blockName, "penalty", "timed");
   state.coldTurkey.penaltyActive = true;
   state.coldTurkey.penaltyBlockName = secret.blockName;
   state.coldTurkey.penaltyLastCheckedAt = Date.now();
-  state.coldTurkey.penaltyStatus = `状态查询无输出，已使用当前密码重新发送 ${secret.blockName} 锁定命令`;
+  state.coldTurkey.penaltyStatus = `状态查询无输出，已重新发送 ${secret.blockName} 30 分钟安全计时锁命令`;
+}
+
+async function refreshTimedColdTurkeyLock(purpose) {
+  if (!fs.existsSync(coldTurkeySessionPath(purpose))) return false;
+  const secret = readColdTurkeySecret(purpose);
+  if (secret.mode !== "timed") return false;
+  const refreshAfterMs = Math.max(1, secret.lockMinutes - 5) * 60 * 1000;
+  if (Date.now() - secret.createdAt < refreshAfterMs) return false;
+  await execFileAsync(
+    COLD_TURKEY_EXECUTABLE,
+    safeTimedLockArgs(secret.blockName),
+    { windowsHide: true, timeout: 15000 }
+  );
+  saveColdTurkeySecret("", secret.blockName, purpose, "timed");
+  return true;
 }
 
 function revealColdTurkeyPassword(status, expectedPurpose) {
@@ -577,10 +596,13 @@ function revealColdTurkeyPassword(status, expectedPurpose) {
   if (!fs.existsSync(coldTurkeySessionPath(purpose))) return "";
   const secret = readColdTurkeySecret(purpose);
   if (expectedPurpose && secret.purpose !== expectedPurpose) return "";
+  const finalStatus = secret.password
+    ? status
+    : `${status}；安全版使用 30 分钟计时锁，没有可手动输入的密码，到期会自动解除`;
   if (purpose === "penalty") {
     state.coldTurkey.passwordRevealed = secret.password;
     state.coldTurkey.penaltyActive = false;
-    state.coldTurkey.penaltyStatus = status;
+    state.coldTurkey.penaltyStatus = finalStatus;
   } else {
     state.coldTurkey = {
       ...state.coldTurkey,
@@ -588,19 +610,25 @@ function revealColdTurkeyPassword(status, expectedPurpose) {
       blockName: secret.blockName,
       passwordRevealed: secret.password,
       recoveryAvailable: false,
-      awaitingUnlockConfirmation: purpose === "focus",
+      awaitingUnlockConfirmation: purpose === "focus" && Boolean(secret.password),
       focusEndsAt: 0,
-      status
+      status: finalStatus
     };
   }
   if (purpose === "focus") {
-    markColdTurkeySecretRevealed("focus");
-    previousFocusPasswordCandidate = findPreviousColdTurkeyPassword(
-      secret.blockName,
-      "focus",
-      secret.password
-    );
-    state.coldTurkey.previousPasswordAvailable = Boolean(previousFocusPasswordCandidate);
+    if (secret.password) {
+      markColdTurkeySecretRevealed("focus");
+      previousFocusPasswordCandidate = findPreviousColdTurkeyPassword(
+        secret.blockName,
+        "focus",
+        secret.password
+      );
+      state.coldTurkey.previousPasswordAvailable = Boolean(previousFocusPasswordCandidate);
+    } else {
+      clearColdTurkeySecret("focus");
+      previousFocusPasswordCandidate = "";
+      state.coldTurkey.previousPasswordAvailable = false;
+    }
   } else {
     clearColdTurkeySecret(purpose);
   }
@@ -655,7 +683,7 @@ async function activateEntertainmentGuard(blockName) {
 async function relockEntertainmentGuard() {
   if (!state.entertainment.guard.active || state.entertainment.guard.endsAt <= Date.now()) return;
   await startColdTurkeyPasswordLock(state.entertainment.guard.blockName, "guard");
-  state.status = "本次津贴时间结束，Cold Turkey 已使用新密码重新锁定";
+  state.status = "本次津贴时间结束，Cold Turkey 已重新启用 30 分钟安全计时锁";
 }
 
 function discoverGameRoots() {
@@ -976,6 +1004,7 @@ async function reconcilePenaltyLock() {
         await rotatePenaltyLock();
         state.status = `惩戒营巡检发现 ${blockName} 锁失效，已自动更换密码并重新锁定`;
       } else if (status === "enabled") {
+        await refreshTimedColdTurkeyLock("penalty");
         state.coldTurkey.penaltyActive = true;
         state.coldTurkey.penaltyStatus = `${blockName} 锁巡检正常`;
       } else {
@@ -1030,7 +1059,7 @@ function clearEntertainmentGuard(message = "24 小时娱乐限制已结束") {
   if (password) state.status = message;
 }
 
-function entertainmentGuardTick() {
+async function entertainmentGuardTick() {
   if (!state.entertainment.guard.active) return;
   const remainingSeconds = Math.max(
     0,
@@ -1040,6 +1069,12 @@ function entertainmentGuardTick() {
   if (remainingSeconds === 0) {
     clearEntertainmentGuard();
     if (state.entertainment.active) stopEntertainment("24 小时限制已结束，娱乐模式已停止");
+  } else {
+    try {
+      await refreshTimedColdTurkeyLock("guard");
+    } catch (error) {
+      state.status = `24 小时娱乐限制续锁失败：${error.message}`;
+    }
   }
   broadcast();
 }
@@ -1896,6 +1931,11 @@ async function monitorTick() {
   if (!state.running) return;
 
   state.remainingSeconds = Math.max(0, Math.ceil((sessionEndsAt - Date.now()) / 1000));
+  try {
+    await refreshTimedColdTurkeyLock("focus");
+  } catch (error) {
+    state.coldTurkey.status = `Cold Turkey 30 分钟安全计时锁续期失败：${error.message}`;
+  }
   if (state.remainingSeconds === 0) {
     const earned = awardCompletedSession();
     revealColdTurkeyPassword("任务自然完成，可用密码提前停止 block", "focus");
@@ -2206,7 +2246,9 @@ ipcMain.handle("entertainment:start", async (_, config) => {
         `已兑换 ${durationMinutes} 分钟娱乐津贴，请用此密码暂停 block`,
         "guard"
       );
-      if (!password) throw new Error("没有可用的 Cold Turkey 解锁密码");
+      if (!password) {
+        state.status = "已兑换娱乐津贴；安全版使用 30 分钟计时锁，没有可用 key，Cold Turkey 最多半小时后自然解锁";
+      }
       state.rewards = redeemEntertainment(state.rewards, durationMinutes);
       saveRewards();
     } catch (error) {
