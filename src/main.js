@@ -1555,12 +1555,17 @@ function repairStreamingWavHeader(filePath) {
     throw new Error("OpenAI 返回的音频不是有效 WAV 文件");
   }
 
-  if (wav.readUInt32LE(4) === 0xFFFFFFFF) wav.writeUInt32LE(wav.length - 8, 4);
+  const riffSize = wav.readUInt32LE(4);
+  if (riffSize === 0xFFFFFFFF || riffSize > wav.length - 8) {
+    wav.writeUInt32LE(wav.length - 8, 4);
+  }
   const dataOffset = wav.indexOf(Buffer.from("data"), 12);
   if (dataOffset < 0 || dataOffset + 8 > wav.length) {
     throw new Error("WAV 文件缺少 data 区块");
   }
-  if (wav.readUInt32LE(dataOffset + 4) === 0xFFFFFFFF) {
+  const dataSize = wav.readUInt32LE(dataOffset + 4);
+  const actualDataSize = wav.length - dataOffset - 8;
+  if (dataSize === 0xFFFFFFFF || dataSize > actualDataSize) {
     wav.writeUInt32LE(wav.length - dataOffset - 8, dataOffset + 4);
   }
   fs.writeFileSync(filePath, wav);
@@ -1671,7 +1676,7 @@ async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
     fs.writeFileSync(audioPath, Buffer.from(await response.arrayBuffer()));
   }
 
-  await playWav(audioPath);
+  await playMedia(audioPath);
   recordAiUsage("speech", api.providerName, api.ttsModel);
   broadcast();
 }
