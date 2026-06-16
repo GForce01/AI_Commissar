@@ -1,3 +1,60 @@
+const TTS_PRESETS = {
+  openai: [
+    { label: "Onyx", value: "onyx" },
+    { label: "Echo", value: "echo" },
+    { label: "Ash", value: "ash" }
+  ],
+  qwen: [
+    { label: "青年政委1", value: "qwen-tts-vd-bailian-voice-20260616085444879-9660" },
+    { label: "青年政委2", value: "qwen-tts-vd-bailian-voice-20260616104622215-236d" },
+    { label: "中年政委", value: "qwen-tts-vd-bailian-voice-20260616104059145-6688" },
+    { label: "老政委", value: "qwen-tts-vd-bailian-voice-20260616104302901-841f" }
+  ]
+};
+
+const TTS_DEFAULTS = {
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini-tts",
+    voice: "onyx"
+  },
+  qwen: {
+    baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+    model: "qwen3-tts-vd-2026-01-26",
+    voice: "qwen-tts-vd-bailian-voice-20260616085444879-9660"
+  }
+};
+
+function ttsPresetValues(provider) {
+  return TTS_PRESETS[provider] || TTS_PRESETS.openai;
+}
+
+function currentTtsVoice() {
+  return elements.ttsVoicePreset.value === "__custom__"
+    ? elements.ttsVoice.value.trim()
+    : elements.ttsVoicePreset.value;
+}
+
+function renderTtsVoicePresets(provider, voice) {
+  const presets = ttsPresetValues(provider);
+  elements.ttsVoicePreset.replaceChildren(...presets.map((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.value;
+    option.textContent = preset.label;
+    return option;
+  }));
+  const custom = document.createElement("option");
+  custom.value = "__custom__";
+  custom.textContent = "自定义声音";
+  elements.ttsVoicePreset.append(custom);
+
+  const selectedVoice = String(voice || TTS_DEFAULTS[provider]?.voice || TTS_DEFAULTS.openai.voice).trim();
+  const matched = presets.some((preset) => preset.value === selectedVoice);
+  elements.ttsVoicePreset.value = matched ? selectedVoice : "__custom__";
+  elements.ttsVoice.value = matched ? "" : selectedVoice;
+  elements.ttsVoiceCustomLabel.classList.toggle("hidden", matched);
+}
+
 const elements = {
   form: document.querySelector("#sessionForm"),
   task: document.querySelector("#task"),
@@ -42,6 +99,8 @@ const elements = {
   coldTurkeyEnabled: document.querySelector("#coldTurkeyEnabled"),
   coldTurkeyBlockName: document.querySelector("#coldTurkeyBlockName"),
   coldTurkeyPenaltyBlockName: document.querySelector("#coldTurkeyPenaltyBlockName"),
+  ttsVoicePreset: document.querySelector("#ttsVoicePreset"),
+  ttsVoiceCustomLabel: document.querySelector("#ttsVoiceCustomLabel"),
   ttsVoice: document.querySelector("#ttsVoice"),
   ttsSpeed: document.querySelector("#ttsSpeed"),
   previewVoice: document.querySelector("#previewVoiceButton"),
@@ -169,7 +228,7 @@ function collectPreferences() {
     coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
     coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
     coldTurkeyPenaltyBlockName: elements.coldTurkeyPenaltyBlockName.value,
-    ttsVoice: elements.ttsVoice.value,
+    ttsVoice: currentTtsVoice(),
     ttsSpeed: elements.ttsSpeed.value,
     entertainmentCommentaryEnabled: elements.entertainmentCommentaryEnabled.checked,
     entertainmentIntervalSeconds: elements.entertainmentInterval.value,
@@ -205,7 +264,7 @@ function hydratePreferences(preferences = {}) {
   elements.coldTurkeyEnabled.checked = Boolean(preferences.coldTurkeyEnabled);
   elements.coldTurkeyBlockName.value = preferences.coldTurkeyBlockName || "AI Commissar";
   elements.coldTurkeyPenaltyBlockName.value = preferences.coldTurkeyPenaltyBlockName || "Games";
-  elements.ttsVoice.value = preferences.ttsVoice || "onyx";
+  renderTtsVoicePresets(elements.ttsProvider.value, preferences.ttsVoice || TTS_DEFAULTS[elements.ttsProvider.value]?.voice);
   elements.ttsSpeed.value = preferences.ttsSpeed ?? 1.1;
   elements.entertainmentCommentaryEnabled.checked = preferences.entertainmentCommentaryEnabled !== false;
   elements.entertainmentInterval.value = preferences.entertainmentIntervalSeconds ?? 60;
@@ -217,25 +276,27 @@ function hydratePreferences(preferences = {}) {
 function applyTtsProviderDefaults() {
   const provider = elements.ttsProvider.value;
   if (provider === "qwen") {
-    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === "https://api.openai.com/v1") {
-      elements.ttsApiBaseUrl.value = "https://dashscope.aliyuncs.com/api/v1";
+    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === TTS_DEFAULTS.openai.baseUrl) {
+      elements.ttsApiBaseUrl.value = TTS_DEFAULTS.qwen.baseUrl;
     }
-    if (!elements.ttsModel.value.trim()) {
-      elements.ttsModel.value = "qwen3-tts-vd";
+    if (!elements.ttsModel.value.trim() || elements.ttsModel.value.trim() === TTS_DEFAULTS.openai.model) {
+      elements.ttsModel.value = TTS_DEFAULTS.qwen.model;
     }
-    if (!elements.ttsVoice.value.trim() || ["onyx", "echo", "ash"].includes(elements.ttsVoice.value.trim())) {
-      elements.ttsVoice.value = "qwen-tts-vd-bailian-voice-20260616085444879-9660";
-    }
+    const voice = currentTtsVoice();
+    renderTtsVoicePresets("qwen", ttsPresetValues("openai").some((preset) => preset.value === voice)
+      ? TTS_DEFAULTS.qwen.voice
+      : voice);
   } else {
-    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === "https://dashscope.aliyuncs.com/api/v1") {
-      elements.ttsApiBaseUrl.value = "https://api.openai.com/v1";
+    if (!elements.ttsApiBaseUrl.value.trim() || elements.ttsApiBaseUrl.value.trim() === TTS_DEFAULTS.qwen.baseUrl) {
+      elements.ttsApiBaseUrl.value = TTS_DEFAULTS.openai.baseUrl;
     }
-    if (elements.ttsModel.value.trim() === "qwen3-tts-vd") {
-      elements.ttsModel.value = "";
+    if (!elements.ttsModel.value.trim() || elements.ttsModel.value.trim() === TTS_DEFAULTS.qwen.model) {
+      elements.ttsModel.value = TTS_DEFAULTS.openai.model;
     }
-    if (elements.ttsVoice.value.trim().startsWith("qwen-tts-vd-")) {
-      elements.ttsVoice.value = "onyx";
-    }
+    const voice = currentTtsVoice();
+    renderTtsVoicePresets("openai", ttsPresetValues("qwen").some((preset) => preset.value === voice)
+      ? TTS_DEFAULTS.openai.voice
+      : voice);
   }
 }
 
@@ -430,7 +491,9 @@ function render(state) {
   const ttsAvailable = Boolean(elements.ttsModel.value.trim());
   if (!ttsAvailable && !state.running && !entertainmentActive) elements.voiceEnabled.checked = false;
   elements.voiceEnabled.disabled = !ttsAvailable || state.running || entertainmentActive;
-  elements.ttsVoice.disabled = !ttsAvailable || state.running || entertainmentActive;
+  elements.ttsVoicePreset.disabled = !ttsAvailable || state.running || entertainmentActive;
+  elements.ttsVoice.disabled = !ttsAvailable || state.running || entertainmentActive
+    || elements.ttsVoicePreset.value !== "__custom__";
   elements.ttsSpeed.disabled = !ttsAvailable || state.running || entertainmentActive;
   elements.previewVoice.disabled = !ttsAvailable || state.running || entertainmentActive;
   elements.visionQuality.disabled = state.running || entertainmentActive;
@@ -540,7 +603,7 @@ elements.form.addEventListener("submit", async (event) => {
     coldTurkeyEnabled: elements.coldTurkeyEnabled.checked,
     coldTurkeyBlockName: elements.coldTurkeyBlockName.value,
     coldTurkeyPenaltyBlockName: elements.coldTurkeyPenaltyBlockName.value,
-    ttsVoice: elements.ttsVoice.value,
+    ttsVoice: currentTtsVoice(),
     ttsSpeed: elements.ttsSpeed.value
   }));
 });
@@ -561,7 +624,7 @@ elements.startEntertainment.addEventListener("click", async () => {
     ollamaEnabled: elements.ollamaEnabled.checked,
     ollamaVisionModel: elements.ollamaVisionModel.value,
     ollamaFallbackToOpenAi: elements.ollamaFallback.checked,
-    ttsVoice: elements.ttsVoice.value,
+    ttsVoice: currentTtsVoice(),
     ttsSpeed: elements.ttsSpeed.value,
     commentaryEnabled: elements.entertainmentCommentaryEnabled.checked,
     intervalSeconds: elements.entertainmentInterval.value,
@@ -581,6 +644,10 @@ elements.entertainmentDuration.addEventListener("input", () => {
 });
 elements.ttsProvider.addEventListener("change", () => {
   applyTtsProviderDefaults();
+  schedulePreferencesSave();
+});
+elements.ttsVoicePreset.addEventListener("change", () => {
+  elements.ttsVoiceCustomLabel.classList.toggle("hidden", elements.ttsVoicePreset.value !== "__custom__");
   schedulePreferencesSave();
 });
 elements.copyTextModelToVision.addEventListener("click", () => {
@@ -615,6 +682,7 @@ elements.copyTextModelToVision.addEventListener("click", () => {
   elements.coldTurkeyEnabled,
   elements.coldTurkeyBlockName,
   elements.coldTurkeyPenaltyBlockName,
+  elements.ttsVoicePreset,
   elements.ttsVoice,
   elements.ttsSpeed,
   elements.entertainmentCommentaryEnabled,
@@ -654,7 +722,7 @@ elements.previewVoice.addEventListener("click", async () => {
   elements.previewVoice.disabled = true;
   elements.previewVoice.textContent = "正在发声...";
   render(await window.commissar.previewVoice({
-    voice: elements.ttsVoice.value,
+    voice: currentTtsVoice(),
     speed: elements.ttsSpeed.value,
     ttsProvider: elements.ttsProvider.value,
     ttsApiBaseUrl: elements.ttsApiBaseUrl.value,

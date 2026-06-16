@@ -419,6 +419,7 @@ test("saved preferences are normalized for restart restoration", () => {
   assert.equal(normalizePreferences({ coldTurkeyPenaltyBlockName: "   " }).coldTurkeyPenaltyBlockName, "Games");
   assert.equal(normalizePreferences({ aiModel: "legacy-model" }).visionModel, "legacy-model");
   assert.equal(normalizePreferences({ ttsModel: "   " }).ttsModel, "");
+  assert.equal(normalizePreferences().ttsModel, "gpt-4o-mini-tts");
   assert.equal(normalizePreferences({ ttsProvider: "unexpected" }).ttsProvider, "openai");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).textApiBaseUrl, "https://legacy.example/v1");
   assert.equal(normalizePreferences({ apiBaseUrl: "https://legacy.example/v1/" }).visionApiBaseUrl, "https://legacy.example/v1");

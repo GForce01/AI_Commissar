@@ -748,7 +748,9 @@ function getCompatibleApiConfig(config = state.config || state.settings.preferen
     textBaseUrl: normalizeApiBaseUrl(config?.textApiBaseUrl || config?.apiBaseUrl || preferences.textApiBaseUrl || preferences.apiBaseUrl),
     visionBaseUrl: normalizeApiBaseUrl(config?.visionApiBaseUrl || config?.apiBaseUrl || preferences.visionApiBaseUrl || preferences.apiBaseUrl),
     ttsBaseUrl: normalizeApiBaseUrl(config?.ttsApiBaseUrl || config?.apiBaseUrl || preferences.ttsApiBaseUrl || preferences.apiBaseUrl),
-    ttsProvider: config?.ttsProvider === "qwen" || preferences.ttsProvider === "qwen" ? "qwen" : "openai",
+    ttsProvider: (config && Object.prototype.hasOwnProperty.call(config, "ttsProvider")
+      ? config.ttsProvider
+      : preferences.ttsProvider) === "qwen" ? "qwen" : "openai",
     textModel,
     visionModel: String(
       config?.visionModel || config?.aiModel || preferences.visionModel || preferences.aiModel || textModel
@@ -2108,7 +2110,9 @@ ipcMain.handle("session:start", async (_, config) => {
       ollamaVisionModel: String(config.ollamaVisionModel || "qwen3-vl:8b").trim(),
       ollamaFallbackToOpenAi: config.ollamaFallbackToOpenAi !== false,
       visionQuality: normalizeVisionQuality(config.visionQuality),
-      ttsVoice: ["onyx", "echo", "ash"].includes(config.ttsVoice) ? config.ttsVoice : "onyx",
+      ttsProvider: config.ttsProvider === "qwen" ? "qwen" : "openai",
+      ttsApiBaseUrl: String(config.ttsApiBaseUrl || "").trim(),
+      ttsVoice: String(config.ttsVoice || "onyx").trim().slice(0, 180) || "onyx",
       ttsSpeed: normalizeTtsSpeed(config.ttsSpeed),
       textModel: config.textModel || config.aiModel || "gpt-5.4-mini",
       visionModel: config.visionModel || config.aiModel || config.textModel || "gpt-5.4-mini",
