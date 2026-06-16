@@ -178,7 +178,7 @@ let registeredGameExecutables = [];
 let allowWindowClose = false;
 let closePromptOpen = false;
 let lastDailyPlanReminderDate = "";
-let compatibleApiKey = "";
+let compatibleApiKeys = { text: "", vision: "", tts: "" };
 const textClassificationCache = new Map();
 const TEXT_CACHE_MS = 30 * 60 * 1000;
 const TEXT_CHECK_INTERVAL_MS = 10 * 1000;
@@ -207,7 +207,12 @@ function publicState() {
       punishmentRemainingSeconds: Math.max(0, Math.ceil((rewards.punishmentUntil - Date.now()) / 1000))
     },
     entertainmentAccess: entertainmentAccess(rewards, state.entertainmentLedger),
-    apiKeyAvailable: Boolean(getCompatibleApiKey()),
+    apiKeyAvailable: Boolean(getCompatibleApiKey("text") || getCompatibleApiKey("vision")),
+    apiKeysAvailable: {
+      text: Boolean(getCompatibleApiKey("text")),
+      vision: Boolean(getCompatibleApiKey("vision")),
+      tts: Boolean(getCompatibleApiKey("tts"))
+    },
     apiProvider: getCompatibleApiConfig().providerName
   };
 }
@@ -248,7 +253,10 @@ function entertainmentLedgerPath() {
   return path.join(app.getPath("userData"), "entertainment-ledger.json");
 }
 
-function compatibleApiKeyPath() {
+function compatibleApiKeyPath(scope = "legacy") {
+  if (["text", "vision", "tts"].includes(scope)) {
+    return path.join(app.getPath("userData"), `compatible-api-key-${scope}.dat`);
+  }
   return path.join(app.getPath("userData"), "compatible-api-key.dat");
 }
 
@@ -747,36 +755,62 @@ function getCompatibleApiConfig(config = state.config || state.settings.preferen
   };
 }
 
-function getCompatibleApiKey() {
-  return compatibleApiKey;
+function normalizeApiKeyScope(scope) {
+  return ["text", "vision", "tts"].includes(scope) ? scope : "text";
 }
 
-function loadCompatibleApiKey() {
+function getCompatibleApiKey(scope = "text") {
+  const keyScope = normalizeApiKeyScope(scope);
+  return compatibleApiKeys[keyScope] || "";
+}
+
+function loadEncryptedCompatibleApiKey(scope) {
   try {
-    if (!safeStorage.isEncryptionAvailable()) return;
-    const encrypted = fs.readFileSync(compatibleApiKeyPath());
-    compatibleApiKey = safeStorage.decryptString(encrypted);
+    const encrypted = fs.readFileSync(compatibleApiKeyPath(scope));
+    return safeStorage.decryptString(encrypted);
   } catch {
-    compatibleApiKey = "";
+    return "";
   }
 }
 
-function saveCompatibleApiKey(apiKey) {
+function loadScopedCompatibleApiKey(scope, legacyKey) {
+  return fs.existsSync(compatibleApiKeyPath(scope))
+    ? loadEncryptedCompatibleApiKey(scope)
+    : legacyKey;
+}
+
+function loadCompatibleApiKeys() {
+  compatibleApiKeys = { text: "", vision: "", tts: "" };
+  if (!safeStorage.isEncryptionAvailable()) return;
+  const legacyKey = loadEncryptedCompatibleApiKey("legacy");
+  compatibleApiKeys = {
+    text: loadScopedCompatibleApiKey("text", legacyKey),
+    vision: loadScopedCompatibleApiKey("vision", legacyKey),
+    tts: loadScopedCompatibleApiKey("tts", legacyKey)
+  };
+}
+
+function saveCompatibleApiKey(scope, apiKey) {
+  const keyScope = normalizeApiKeyScope(scope);
   const key = String(apiKey || "").trim();
-  if (!key) {
-    compatibleApiKey = "";
-    try {
-      fs.rmSync(compatibleApiKeyPath(), { force: true });
-    } catch {
-      // Clearing an absent credential is already successful.
-    }
-    return;
-  }
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("系统安全存储不可用，无法安全保存 API Key");
   }
-  compatibleApiKey = key;
-  fs.writeFileSync(compatibleApiKeyPath(), safeStorage.encryptString(key));
+  if (!key) {
+    compatibleApiKeys[keyScope] = "";
+    fs.writeFileSync(compatibleApiKeyPath(keyScope), safeStorage.encryptString(""));
+    return;
+  }
+  compatibleApiKeys[keyScope] = key;
+  fs.writeFileSync(compatibleApiKeyPath(keyScope), safeStorage.encryptString(key));
+}
+
+function copyCompatibleApiKey(fromScope, toScope) {
+  const sourceScope = normalizeApiKeyScope(fromScope);
+  const targetScope = normalizeApiKeyScope(toScope);
+  const key = getCompatibleApiKey(sourceScope);
+  if (!key) throw new Error("文字 API Key 尚未保存，无法同步");
+  saveCompatibleApiKey(targetScope, key);
 }
 
 function saveDailyPlan() {
@@ -1055,11 +1089,13 @@ async function requestAiClassification(
   const baseUrl = modality === "vision" ? api.visionBaseUrl : api.textBaseUrl;
   const endpoint = compatibleEndpoint(baseUrl, "chat/completions");
   const model = modality === "vision" ? api.visionModel : api.textModel;
+  const apiKey = getCompatibleApiKey(modality);
   if (!model) throw new Error(`${modality === "vision" ? "视觉" : "文字"}模型未配置`);
+  if (!apiKey) throw new Error(`${modality === "vision" ? "视觉" : "文字"} API Key 未配置`);
   const request = async (tokenParameter) => fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${getCompatibleApiKey()}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -1136,7 +1172,7 @@ async function requestTextModel(prompt, { format, maxOutputTokens } = {}) {
   if (ollamaRequested && !useOllama && !modelConfig.ollamaFallbackToOpenAi) {
     throw new Error(`本地文字模型 ${modelConfig.ollamaTextModel} 不可用`);
   }
-  if (!getCompatibleApiKey()) {
+  if (!getCompatibleApiKey("text")) {
     throw new Error("本地文字模型不可用，且没有配置兼容 API Key");
   }
   return requestAiClassification(
@@ -1171,7 +1207,7 @@ async function requestVisionModel(prompt, imageBase64, { format, mimeType = "ima
   if (ollamaRequested && !useOllama && !modelConfig.ollamaFallbackToOpenAi) {
     throw new Error(`本地视觉模型 ${modelConfig.ollamaVisionModel} 不可用`);
   }
-  if (!getCompatibleApiKey()) {
+  if (!getCompatibleApiKey("vision")) {
     throw new Error("本地视觉模型不可用，且没有配置兼容 API Key");
   }
   return requestAiClassification(
@@ -1541,7 +1577,8 @@ function playWav(filePath) {
 async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
   const normalizedSpeed = normalizeTtsSpeed(speed);
   const api = getCompatibleApiConfig();
-  if (!api.ttsModel) return;
+  const apiKey = getCompatibleApiKey("tts");
+  if (!apiKey || !api.ttsModel) return;
   const cacheDir = path.join(app.getPath("userData"), "voice-cache");
   fs.mkdirSync(cacheDir, { recursive: true });
   const personalityPrompt = state.settings.personalityPrompt;
@@ -1555,7 +1592,7 @@ async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
     const response = await fetch(compatibleEndpoint(api.ttsBaseUrl, "audio/speech"), {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${getCompatibleApiKey()}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -1582,7 +1619,7 @@ async function speakCommissar(text) {
   const voice = state.config?.ttsVoice || "onyx";
   const speed = state.config?.ttsSpeed;
   const speechTask = speechQueue.then(async () => {
-    if (!getCompatibleApiKey() || !getCompatibleApiConfig().ttsModel) return;
+    if (!getCompatibleApiKey("tts") || !getCompatibleApiConfig().ttsModel) return;
     await speakWithOpenAi(text, voice, speed);
   }).catch((error) => {
     state.status = `AI 语音暂不可用：${error.message}`;
@@ -1651,7 +1688,7 @@ async function monitorTick() {
     Math.min(60, Number(state.config.commentaryIntervalMinutes) || 10)
   ) * 60 * 1000;
   const commentaryDue = state.config.commentaryEnabled
-    && (getCompatibleApiKey() || (state.config.ollamaEnabled && state.ollama.available))
+    && (getCompatibleApiKey("vision") || (state.config.ollamaEnabled && state.ollama.available))
     && Date.now() - lastProgressCommentaryAt >= commentaryIntervalMs
     && Date.now() - lastVisionAiCheckAt >= VISION_CHECK_INTERVAL_MS;
   if (commentaryDue) {
@@ -1661,7 +1698,7 @@ async function monitorTick() {
 
   let result = classifyActivity(activity, state.config);
   const canUseAi = state.config.aiEnabled
-    && (getCompatibleApiKey() || (state.config.ollamaEnabled && state.ollama.available));
+    && (getCompatibleApiKey("text") || (state.config.ollamaEnabled && state.ollama.available));
   const textDue = Date.now() - lastTextAiCheckAt >= TEXT_CHECK_INTERVAL_MS;
 
   if (result.verdict === "unknown" && canUseAi && textDue) {
@@ -1902,13 +1939,8 @@ ipcMain.handle("entertainment:start", async (_, config) => {
     return publicState();
   }
   const entertainmentConfig = normalizeEntertainmentConfig(config);
-  const canUseVision = getCompatibleApiKey()
+  const canUseVision = getCompatibleApiKey("vision")
     || (entertainmentConfig.ollamaEnabled && state.ollama.available);
-  if (entertainmentConfig.commentaryEnabled && !getCompatibleApiKey()) {
-    state.status = "娱乐模式的 AI 语音需要兼容 API Key";
-    broadcast();
-    return publicState();
-  }
   if (entertainmentConfig.commentaryEnabled && !canUseVision) {
     state.status = "娱乐模式需要兼容 API 或可用的 Ollama 视觉模型";
     broadcast();
@@ -2116,12 +2148,23 @@ ipcMain.handle("settings:preferences:save", (_, preferences) => {
   saveSettings();
   return publicState();
 });
-ipcMain.handle("settings:api-key:save", (_, apiKey) => {
+ipcMain.handle("settings:api-key:save", (_, scope, apiKey) => {
+  const keyScope = normalizeApiKeyScope(scope);
   try {
-    saveCompatibleApiKey(apiKey);
+    saveCompatibleApiKey(keyScope, apiKey);
     state.status = String(apiKey || "").trim()
-      ? "兼容 API Key 已加密保存"
-      : "兼容 API Key 已清除";
+      ? `${keyScope.toUpperCase()} API Key 已加密保存`
+      : `${keyScope.toUpperCase()} API Key 已清除`;
+  } catch (error) {
+    state.status = error.message;
+  }
+  broadcast();
+  return publicState();
+});
+ipcMain.handle("settings:api-key:copy", (_, fromScope, toScope) => {
+  try {
+    copyCompatibleApiKey(fromScope, toScope);
+    state.status = `${normalizeApiKeyScope(fromScope).toUpperCase()} API Key 已同步到 ${normalizeApiKeyScope(toScope).toUpperCase()}`;
   } catch (error) {
     state.status = error.message;
   }
@@ -2199,7 +2242,7 @@ app.whenReady().then(async () => {
   registeredGameExecutables = await discoverRegisteredGames();
   loadRewards();
   loadSettings();
-  loadCompatibleApiKey();
+  loadCompatibleApiKeys();
   loadDailyPlan();
   loadEntertainmentLedger();
   loadColdTurkeyRecovery();

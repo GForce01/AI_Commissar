@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld("commissar", {
   previewVoice: (options) => ipcRenderer.invoke("voice:preview", options),
   savePersonality: (prompt) => ipcRenderer.invoke("settings:personality:save", prompt),
   savePreferences: (preferences) => ipcRenderer.invoke("settings:preferences:save", preferences),
-  saveCompatibleApiKey: (apiKey) => ipcRenderer.invoke("settings:api-key:save", apiKey),
+  saveCompatibleApiKey: (scope, apiKey) => ipcRenderer.invoke("settings:api-key:save", scope, apiKey),
+  copyCompatibleApiKey: (fromScope, toScope) => ipcRenderer.invoke("settings:api-key:copy", fromScope, toScope),
   generateDailyPlan: (sourceTasks) => ipcRenderer.invoke("daily-plan:generate", sourceTasks),
   completeDailyPlanItem: (itemId, evidence, evidenceImageDataUrl) => (
     ipcRenderer.invoke("daily-plan:complete", itemId, evidence, evidenceImageDataUrl)

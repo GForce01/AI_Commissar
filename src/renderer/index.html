@@ -74,15 +74,35 @@
           <label>语音 API Base URL
             <input id="ttsApiBaseUrl" value="https://api.openai.com/v1" placeholder="https://example.com/v1">
           </label>
-          <label>API Key
-            <input id="compatibleApiKey" type="password" autocomplete="off" placeholder="留空不会覆盖已经保存的 Key">
-          </label>
           <label>语音模型
             <input id="ttsModel" value="" placeholder="留空则停用 AI 语音">
           </label>
+          <label>文字 API Key
+            <input id="textCompatibleApiKey" type="password" autocomplete="off" placeholder="保存后不会再显示">
+          </label>
           <div class="prompt-actions">
-            <button id="saveCompatibleApiKeyButton" class="secondary" type="button">加密保存 Key</button>
-            <button id="clearCompatibleApiKeyButton" class="quiet" type="button">清除 Key</button>
+            <button id="saveTextApiKeyButton" class="secondary" type="button">保存文字 Key</button>
+            <button id="clearTextApiKeyButton" class="quiet" type="button">清除文字 Key</button>
+          </div>
+          <label>视觉 API Key
+            <span class="input-with-button">
+              <input id="visionCompatibleApiKey" type="password" autocomplete="off" placeholder="可与文字 Key 不同">
+              <button id="copyTextKeyToVisionButton" class="secondary" type="button">同文字 Key</button>
+            </span>
+          </label>
+          <div class="prompt-actions">
+            <button id="saveVisionApiKeyButton" class="secondary" type="button">保存视觉 Key</button>
+            <button id="clearVisionApiKeyButton" class="quiet" type="button">清除视觉 Key</button>
+          </div>
+          <label>语音 API Key
+            <span class="input-with-button">
+              <input id="ttsCompatibleApiKey" type="password" autocomplete="off" placeholder="语音服务可单独配置；留空会停用语音">
+              <button id="copyTextKeyToTtsButton" class="secondary" type="button">同文字 Key</button>
+            </span>
+          </label>
+          <div class="prompt-actions">
+            <button id="saveTtsApiKeyButton" class="secondary" type="button">保存语音 Key</button>
+            <button id="clearTtsApiKeyButton" class="quiet" type="button">清除语音 Key</button>
           </div>
         </details>
         <details class="integration">

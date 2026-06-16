@@ -14,10 +14,18 @@ const elements = {
   textApiBaseUrl: document.querySelector("#textApiBaseUrl"),
   visionApiBaseUrl: document.querySelector("#visionApiBaseUrl"),
   ttsApiBaseUrl: document.querySelector("#ttsApiBaseUrl"),
-  compatibleApiKey: document.querySelector("#compatibleApiKey"),
+  textCompatibleApiKey: document.querySelector("#textCompatibleApiKey"),
+  visionCompatibleApiKey: document.querySelector("#visionCompatibleApiKey"),
+  ttsCompatibleApiKey: document.querySelector("#ttsCompatibleApiKey"),
+  copyTextKeyToVision: document.querySelector("#copyTextKeyToVisionButton"),
+  copyTextKeyToTts: document.querySelector("#copyTextKeyToTtsButton"),
   ttsModel: document.querySelector("#ttsModel"),
-  saveCompatibleApiKey: document.querySelector("#saveCompatibleApiKeyButton"),
-  clearCompatibleApiKey: document.querySelector("#clearCompatibleApiKeyButton"),
+  saveTextApiKey: document.querySelector("#saveTextApiKeyButton"),
+  clearTextApiKey: document.querySelector("#clearTextApiKeyButton"),
+  saveVisionApiKey: document.querySelector("#saveVisionApiKeyButton"),
+  clearVisionApiKey: document.querySelector("#clearVisionApiKeyButton"),
+  saveTtsApiKey: document.querySelector("#saveTtsApiKeyButton"),
+  clearTtsApiKey: document.querySelector("#clearTtsApiKeyButton"),
   ollamaEnabled: document.querySelector("#ollamaEnabled"),
   ollamaTextModel: document.querySelector("#ollamaTextModel"),
   ollamaVisionModel: document.querySelector("#ollamaVisionModel"),
@@ -259,7 +267,7 @@ function render(state) {
     || (elements.coldTurkeyEnabled.checked && state.coldTurkey?.awaitingUnlockConfirmation);
   elements.stop.disabled = !state.running;
   elements.startEntertainment.disabled = state.running || entertainmentActive
-    || (elements.entertainmentCommentaryEnabled.checked && !state.apiKeyAvailable)
+    || (elements.entertainmentCommentaryEnabled.checked && !state.apiKeysAvailable?.vision && !state.ollama?.available)
     || (state.rewards?.points || 0) < entertainmentCost
     || Boolean(access.blockedByPenalty)
     || !access.focusRequirementMet
@@ -327,14 +335,26 @@ function render(state) {
   if (document.activeElement !== elements.personalityPrompt) {
     elements.personalityPrompt.value = state.settings?.personalityPrompt || "";
   }
-  elements.apiHint.textContent = state.apiKeyAvailable
-    ? `已配置 ${state.apiProvider || "兼容 API"}。AI 功能仍需手动勾选。`
+  const apiKeys = state.apiKeysAvailable || {};
+  const keyLabels = [
+    apiKeys.text ? "文字 Key" : "",
+    apiKeys.vision ? "视觉 Key" : "",
+    apiKeys.tts ? "语音 Key" : ""
+  ].filter(Boolean).join("、");
+  elements.apiHint.textContent = keyLabels
+    ? `已配置 ${state.apiProvider || "兼容 API"}：${keyLabels}。AI 功能仍需手动勾选。`
     : state.ollama?.available
       ? "未配置兼容 API Key；可使用 Ollama，AI 语音不可用。"
       : "未配置兼容 API Key，将只使用本地规则。";
-  elements.compatibleApiKey.placeholder = state.apiKeyAvailable
-    ? "API Key 已加密保存；输入新 Key 可替换"
-    : "输入 API Key，保存后不会再显示";
+  elements.textCompatibleApiKey.placeholder = apiKeys.text
+    ? "文字 Key 已加密保存；输入新 Key 可替换"
+    : "输入文字 API Key，保存后不会再显示";
+  elements.visionCompatibleApiKey.placeholder = apiKeys.vision
+    ? "视觉 Key 已加密保存；输入新 Key 可替换"
+    : "输入视觉 API Key，或点击同文字 Key";
+  elements.ttsCompatibleApiKey.placeholder = apiKeys.tts
+    ? "语音 Key 已加密保存；输入新 Key 可替换"
+    : "输入语音 API Key，或点击同文字 Key";
   const installedModels = (state.ollama?.models || []).map((model) => model.name);
   elements.ollamaStatus.textContent = state.ollama?.available
     ? `Ollama 在线。已安装：${installedModels.join(", ") || "暂无模型"}`
@@ -350,6 +370,21 @@ function render(state) {
   elements.textApiBaseUrl.disabled = state.running || entertainmentActive;
   elements.visionApiBaseUrl.disabled = state.running || entertainmentActive;
   elements.ttsApiBaseUrl.disabled = state.running || entertainmentActive;
+  elements.textCompatibleApiKey.disabled = state.running || entertainmentActive;
+  elements.visionCompatibleApiKey.disabled = state.running || entertainmentActive;
+  elements.ttsCompatibleApiKey.disabled = state.running || entertainmentActive;
+  elements.copyTextKeyToVision.disabled = state.running || entertainmentActive;
+  elements.copyTextKeyToTts.disabled = state.running || entertainmentActive;
+  [
+    elements.saveTextApiKey,
+    elements.clearTextApiKey,
+    elements.saveVisionApiKey,
+    elements.clearVisionApiKey,
+    elements.saveTtsApiKey,
+    elements.clearTtsApiKey
+  ].forEach((button) => {
+    button.disabled = state.running || entertainmentActive;
+  });
   elements.ttsModel.disabled = state.running || entertainmentActive;
   const ttsAvailable = Boolean(elements.ttsModel.value.trim());
   if (!ttsAvailable && !state.running && !entertainmentActive) elements.voiceEnabled.checked = false;
@@ -587,16 +622,39 @@ elements.resetPersonality.addEventListener("click", async () => {
 elements.recoverColdTurkey.addEventListener("click", async () => {
   render(await window.commissar.recoverColdTurkey());
 });
-elements.saveCompatibleApiKey.addEventListener("click", async () => {
-  if (!elements.compatibleApiKey.value.trim()) return;
+
+async function saveApiKey(scope, input) {
+  if (!input.value.trim()) return;
   clearTimeout(preferencesSaveTimer);
   await window.commissar.savePreferences(collectPreferences());
-  render(await window.commissar.saveCompatibleApiKey(elements.compatibleApiKey.value));
-  elements.compatibleApiKey.value = "";
+  render(await window.commissar.saveCompatibleApiKey(scope, input.value));
+  input.value = "";
+}
+
+async function clearApiKey(scope, input) {
+  render(await window.commissar.saveCompatibleApiKey(scope, ""));
+  input.value = "";
+}
+
+async function copyTextKeyTo(scope, input) {
+  if (elements.textCompatibleApiKey.value.trim()) {
+    input.value = elements.textCompatibleApiKey.value;
+    return;
+  }
+  render(await window.commissar.copyCompatibleApiKey("text", scope));
+}
+
+elements.saveTextApiKey.addEventListener("click", () => saveApiKey("text", elements.textCompatibleApiKey));
+elements.clearTextApiKey.addEventListener("click", () => clearApiKey("text", elements.textCompatibleApiKey));
+elements.saveVisionApiKey.addEventListener("click", () => saveApiKey("vision", elements.visionCompatibleApiKey));
+elements.clearVisionApiKey.addEventListener("click", () => clearApiKey("vision", elements.visionCompatibleApiKey));
+elements.saveTtsApiKey.addEventListener("click", () => saveApiKey("tts", elements.ttsCompatibleApiKey));
+elements.clearTtsApiKey.addEventListener("click", () => clearApiKey("tts", elements.ttsCompatibleApiKey));
+elements.copyTextKeyToVision.addEventListener("click", () => {
+  copyTextKeyTo("vision", elements.visionCompatibleApiKey);
 });
-elements.clearCompatibleApiKey.addEventListener("click", async () => {
-  render(await window.commissar.saveCompatibleApiKey(""));
-  elements.compatibleApiKey.value = "";
+elements.copyTextKeyToTts.addEventListener("click", () => {
+  copyTextKeyTo("tts", elements.ttsCompatibleApiKey);
 });
 elements.confirmColdTurkeyUnlocked.addEventListener("click", async () => {
   render(await window.commissar.confirmColdTurkeyUnlocked());
