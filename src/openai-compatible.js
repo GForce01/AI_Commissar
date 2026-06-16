@@ -17,12 +17,29 @@ function compatibleEndpoint(baseUrl, pathname) {
 }
 
 function extractChatCompletionText(payload = {}) {
-  const content = payload.choices?.[0]?.message?.content;
+  const choice = payload.choices?.[0] || payload.output?.choices?.[0] || {};
+  const message = choice.message || choice.delta || {};
+  const content = message.content ?? choice.text ?? payload.output?.text ?? payload.text;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((item) => item?.text || item?.content || "").join("");
+    return content.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item?.text === "string") return item.text;
+      if (typeof item?.content === "string") return item.content;
+      if (typeof item?.output_text === "string") return item.output_text;
+      return "";
+    }).join("");
   }
+  if (typeof message.reasoning_content === "string") return message.reasoning_content;
   return "";
+}
+
+function summarizeCompatibleResponse(payload = {}) {
+  const summary = JSON.stringify(payload, (_key, value) => {
+    if (typeof value === "string") return value.length > 300 ? `${value.slice(0, 300)}...` : value;
+    return value;
+  });
+  return String(summary || "").slice(0, 800);
 }
 
 function completionTokenBody(maxOutputTokens, parameter = "max_completion_tokens") {
@@ -51,5 +68,6 @@ module.exports = {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 };

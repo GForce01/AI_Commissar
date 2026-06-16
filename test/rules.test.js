@@ -17,6 +17,7 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("../src/openai-compatible");
 const {
@@ -324,6 +325,16 @@ test("OpenAI-compatible endpoints and chat responses are normalized", () => {
   assert.equal(extractChatCompletionText({
     choices: [{ message: { content: "兼容响应" } }]
   }), "兼容响应");
+  assert.equal(extractChatCompletionText({
+    choices: [{ text: "旧式兼容响应" }]
+  }), "旧式兼容响应");
+  assert.equal(extractChatCompletionText({
+    output: { text: "输出字段响应" }
+  }), "输出字段响应");
+  assert.equal(extractChatCompletionText({
+    choices: [{ message: { content: [{ text: "数组" }, { output_text: "响应" }] } }]
+  }), "数组响应");
+  assert.match(summarizeCompatibleResponse({ value: "x".repeat(400) }), /xxx/);
   assert.deepEqual(completionTokenBody(900), { max_completion_tokens: 900 });
   assert.equal(alternateTokenParameter(
     "Unsupported parameter: 'max_completion_tokens'. Use 'max_tokens' instead.",

@@ -30,6 +30,7 @@ const {
   completionTokenBody,
   compatibleEndpoint,
   extractChatCompletionText,
+  summarizeCompatibleResponse,
   normalizeApiBaseUrl
 } = require("./openai-compatible");
 const {
@@ -1130,8 +1131,11 @@ async function requestAiClassification(
     }
   }
 
-  const text = extractChatCompletionText(await response.json()).trim();
-  if (!text) throw new Error(`${api.providerName} 返回了空响应`);
+  const payload = await response.json();
+  const text = extractChatCompletionText(payload).trim();
+  if (!text) {
+    throw new Error(`${api.providerName} 返回了空响应：${summarizeCompatibleResponse(payload)}`);
+  }
   recordAiUsage("content", api.providerName, model, { fallback });
   state.aiUsage.content.modality = modality;
   return text;
@@ -1562,6 +1566,22 @@ function repairStreamingWavHeader(filePath) {
   fs.writeFileSync(filePath, wav);
 }
 
+function isValidWavFile(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const header = Buffer.alloc(12);
+    const bytesRead = fs.readSync(fd, header, 0, 12, 0);
+    return bytesRead >= 12
+      && header.toString("ascii", 0, 4) === "RIFF"
+      && header.toString("ascii", 8, 12) === "WAVE";
+  } catch {
+    return false;
+  } finally {
+    if (fd) fs.closeSync(fd);
+  }
+}
+
 function playWav(filePath) {
   repairStreamingWavHeader(filePath);
   const command = [
@@ -1573,6 +1593,46 @@ function playWav(filePath) {
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
     { windowsHide: true, timeout: 60000 }
   );
+}
+
+function fileUri(filePath) {
+  return new URL(`file:///${filePath.replace(/\\/g, "/")}`).href;
+}
+
+function playMedia(filePath) {
+  if (path.extname(filePath).toLowerCase() === ".wav") return playWav(filePath);
+  const escapedUri = fileUri(filePath).replaceAll("'", "''");
+  const command = [
+    "Add-Type -AssemblyName PresentationCore;",
+    "$player = New-Object System.Windows.Media.MediaPlayer;",
+    `$player.Open([Uri]'${escapedUri}');`,
+    "$deadline = (Get-Date).AddSeconds(10);",
+    "while (-not $player.NaturalDuration.HasTimeSpan -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 };",
+    "if (-not $player.NaturalDuration.HasTimeSpan) { throw '无法读取音频时长'; };",
+    "$player.Play();",
+    "Start-Sleep -Milliseconds ([Math]::Min(60000, [Math]::Max(500, [int]$player.NaturalDuration.TimeSpan.TotalMilliseconds + 300)));",
+    "$player.Close();"
+  ].join(" ");
+  return execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    { windowsHide: true, timeout: 70000 }
+  );
+}
+
+function audioExtensionFrom(contentType = "", sourceUrl = "") {
+  const type = String(contentType || "").toLowerCase();
+  if (type.includes("mpeg") || type.includes("mp3")) return ".mp3";
+  if (type.includes("wav") || type.includes("wave")) return ".wav";
+  if (type.includes("ogg")) return ".ogg";
+  if (type.includes("aac")) return ".aac";
+  try {
+    const ext = path.extname(new URL(sourceUrl).pathname).toLowerCase();
+    if ([".mp3", ".wav", ".ogg", ".aac", ".m4a"].includes(ext)) return ext;
+  } catch {
+    // The URL may be absent or relative.
+  }
+  return ".mp3";
 }
 
 async function speakWithOpenAi(text, voice = "onyx", speed = 1.1) {
@@ -1643,9 +1703,15 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
     .update(`qwen:${api.ttsBaseUrl}:${api.ttsModel}:${voice}:${normalizedSpeed}:${text}`)
     .digest("hex")
     .slice(0, 20);
-  const audioPath = path.join(cacheDir, `${hash}.wav`);
+  let audioPath = "";
+  const cached = fs.readdirSync(cacheDir).find((file) => file.startsWith(`${hash}.`));
+  if (cached) audioPath = path.join(cacheDir, cached);
+  if (audioPath && path.extname(audioPath).toLowerCase() === ".wav" && !isValidWavFile(audioPath)) {
+    fs.rmSync(audioPath, { force: true });
+    audioPath = "";
+  }
 
-  if (!fs.existsSync(audioPath)) {
+  if (!audioPath || !fs.existsSync(audioPath)) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -1668,6 +1734,7 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
     const payload = await response.json();
     const audioData = qwenTtsAudioData(payload);
     if (audioData) {
+      audioPath = path.join(cacheDir, `${hash}.wav`);
       fs.writeFileSync(audioPath, Buffer.from(audioData, "base64"));
     } else {
       const audioUrl = qwenTtsAudioUrl(payload);
@@ -1676,11 +1743,13 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
       if (!audioResponse.ok) {
         throw new Error(`Qwen-TTS 音频下载失败 ${audioResponse.status}`);
       }
+      const extension = audioExtensionFrom(audioResponse.headers.get("content-type"), audioUrl);
+      audioPath = path.join(cacheDir, `${hash}${extension}`);
       fs.writeFileSync(audioPath, Buffer.from(await audioResponse.arrayBuffer()));
     }
   }
 
-  await playWav(audioPath);
+  await playMedia(audioPath);
   recordAiUsage("speech", "Qwen-TTS", api.ttsModel);
   broadcast();
 }
