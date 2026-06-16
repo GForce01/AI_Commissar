@@ -1717,21 +1717,33 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
   }
 
   if (!audioPath || !fs.existsSync(audioPath)) {
-    const response = await fetch(endpoint, {
+    const requestBody = {
+      model: api.ttsModel,
+      text,
+      voice,
+      language_type: "Chinese",
+      stream: false
+    };
+    const legacyRequestBody = {
+      model: api.ttsModel,
+      input: {
+        text,
+        voice,
+        language_type: "Chinese"
+      }
+    };
+    const request = (body) => fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: api.ttsModel,
-        input: {
-          text,
-          voice,
-          language_type: "Chinese"
-        }
-      })
+      body: JSON.stringify(body)
     });
+    let response = await request(requestBody);
+    if (!response.ok && response.status === 400) {
+      response = await request(legacyRequestBody);
+    }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 500);
       throw new Error(`Qwen-TTS ${response.status}${detail ? `：${detail}` : ""}`);
@@ -1759,17 +1771,21 @@ async function speakWithQwenTts(text, voice, speed = 1.1) {
   broadcast();
 }
 
-async function speakCommissar(text) {
+async function speakConfiguredTts(text) {
   const voice = state.config?.ttsVoice || "onyx";
   const speed = state.config?.ttsSpeed;
+  const api = getCompatibleApiConfig();
+  if (!getCompatibleApiKey("tts") || !api.ttsModel) return;
+  if (api.ttsProvider === "qwen") {
+    await speakWithQwenTts(text, voice, speed);
+  } else {
+    await speakWithOpenAi(text, voice, speed);
+  }
+}
+
+async function speakCommissar(text) {
   const speechTask = speechQueue.then(async () => {
-    const api = getCompatibleApiConfig();
-    if (!getCompatibleApiKey("tts") || !api.ttsModel) return;
-    if (api.ttsProvider === "qwen") {
-      await speakWithQwenTts(text, voice, speed);
-    } else {
-      await speakWithOpenAi(text, voice, speed);
-    }
+    await speakConfiguredTts(text);
   }).catch((error) => {
     state.status = `AI 语音暂不可用：${error.message}`;
     broadcast();
@@ -1839,13 +1855,7 @@ async function testConfiguredModel(kind, config = {}) {
       };
     }
     if (kind === "speech") {
-      const voice = state.config?.ttsVoice || "onyx";
-      const speed = state.config?.ttsSpeed;
-      if (api.ttsProvider === "qwen") {
-        await speakWithQwenTts("语音模型测试成功，当前语音服务已经接通。", voice, speed);
-      } else {
-        await speakWithOpenAi("语音模型测试成功，当前语音服务已经接通。", voice, speed);
-      }
+      await speakConfiguredTts("语音模型测试成功，当前语音服务已经接通。");
       return {
         ok: true,
         kind,
@@ -2352,7 +2362,7 @@ ipcMain.handle("voice:preview", async (_, options = {}) => {
     ttsApiBaseUrl: String(options.ttsApiBaseUrl || state.settings.preferences.ttsApiBaseUrl || "").trim(),
     ttsModel: String(options.ttsModel ?? state.settings.preferences.ttsModel ?? "").trim()
   };
-  await speakCommissar(await generateCommissarLine());
+  await speakConfiguredTts("保持警惕，风暴依然作响。现在回到任务。");
   if (previousVoice) state.config.ttsVoice = previousVoice;
   else delete state.config.ttsVoice;
   if (previousSpeed) state.config.ttsSpeed = previousSpeed;
