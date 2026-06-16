@@ -2366,7 +2366,7 @@ ipcMain.handle("voice:preview", async (_, options = {}) => {
     ttsApiBaseUrl: String(options.ttsApiBaseUrl || state.settings.preferences.ttsApiBaseUrl || "").trim(),
     ttsModel: String(options.ttsModel ?? state.settings.preferences.ttsModel ?? "").trim()
   };
-  await speakConfiguredTts("保持警惕，风暴依然作响。现在回到任务。");
+  await speakConfiguredTts("保持警惕，风暴依然作响。现在立刻回到任务。");
   if (previousVoice) state.config.ttsVoice = previousVoice;
   else delete state.config.ttsVoice;
   if (previousSpeed) state.config.ttsSpeed = previousSpeed;
