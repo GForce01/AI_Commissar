@@ -490,6 +490,16 @@ function activePenaltyBlockName() {
   return penaltyBlockName();
 }
 
+async function ensureColdTurkeyBlockReadyForNewLock(blockName) {
+  const name = validateBlockName(blockName);
+  const status = await getColdTurkeyBlockStatus(name);
+  if (status === "disabled") return;
+  if (status === "enabled") {
+    throw new Error(`Cold Turkey block「${name}」仍在锁定中，请先用上一轮密码解锁后再开始新锁`);
+  }
+  throw new Error(`无法确认 Cold Turkey block「${name}」是否已解锁；请先在 Cold Turkey 中确认该 block 已解除，再开始新锁`);
+}
+
 async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
   if (!coldTurkeyAvailable()) throw new Error("未找到 Cold Turkey Blocker");
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows 安全存储不可用");
@@ -501,6 +511,7 @@ async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
     );
   }
   const name = validateBlockName(blockName);
+  await ensureColdTurkeyBlockReadyForNewLock(name);
   const password = generateColdTurkeyPassword();
   saveColdTurkeySecret(password, name, purpose);
 
@@ -1924,7 +1935,7 @@ async function monitorTick() {
   if (state.remainingSeconds === 0) {
     awardCompletedSession();
     const earned = sessionEarnedPoints;
-    revealColdTurkeyPassword("任务自然完成，可用密码提前停止 block", "focus");
+    revealColdTurkeyPassword("任务自然完成，可用密码停止 block", "focus");
     stopSession(earned > 0 ? `本轮完成，本轮累计获得 ${earned} 点` : "本轮完成，专注分钟已累计入账");
     notify("本轮完成", earned > 0 ? `本轮累计获得 ${earned} 点。` : "专注分钟已累计入账。");
     return;
@@ -2334,7 +2345,7 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
         verdict: "completion",
         reason: `完成证据通过：${review.reason}`
       });
-      const password = revealColdTurkeyPassword("证据通过，可用密码提前停止 block", "focus");
+      const password = revealColdTurkeyPassword("证据通过，可用密码停止 block", "focus");
       stopSession(earned > 0
         ? `证据通过：${review.reason}；本轮累计获得 ${earned} 点`
         : `证据通过：${review.reason}；专注分钟已累计入账`);
