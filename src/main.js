@@ -497,7 +497,7 @@ async function ensureColdTurkeyBlockReadyForNewLock(blockName) {
   if (status === "enabled") {
     throw new Error(`Cold Turkey block「${name}」仍在锁定中，请先用上一轮密码解锁后再开始新锁`);
   }
-  throw new Error(`无法确认 Cold Turkey block「${name}」是否已解锁；请先在 Cold Turkey 中确认该 block 已解除，再开始新锁`);
+  throw new Error(`无法确认 Cold Turkey block「${name}」是否已解锁；如果状态查询为空，可能是 Cold Turkey 正在运行，请先关闭 Cold Turkey 主窗口，并在右下角任务栏托盘中退出 Cold Turkey，再确认该 block 已解除后重试`);
 }
 
 async function startColdTurkeyPasswordLock(blockName, purpose = "focus") {
