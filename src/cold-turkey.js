@@ -15,6 +15,10 @@ function validateBlockName(value) {
   return name;
 }
 
+function passwordStopArgs(blockName, password) {
+  return ["-stop", validateBlockName(blockName), "-password", String(password || "")];
+}
+
 function coldTurkeyAvailable(executablePath = DEFAULT_EXECUTABLE) {
   return fs.existsSync(executablePath);
 }
@@ -31,5 +35,6 @@ module.exports = {
   coldTurkeyAvailable,
   generateColdTurkeyPassword,
   parseBlockStatus,
+  passwordStopArgs,
   validateBlockName
 };

@@ -22,6 +22,7 @@ const {
   coldTurkeyAvailable,
   generateColdTurkeyPassword,
   parseBlockStatus,
+  passwordStopArgs,
   validateBlockName
 } = require("./cold-turkey");
 const { getOllamaStatus, hasModel, ollamaChat } = require("./ollama");
@@ -586,17 +587,53 @@ async function reassertPenaltyLock() {
   state.coldTurkey.penaltyStatus = `状态查询无输出，已使用当前密码重新发送 ${secret.blockName} 锁定命令`;
 }
 
-function revealColdTurkeyPassword(status, expectedPurpose) {
+async function stopColdTurkeyBlockWithPassword(secret) {
+  await execFileAsync(
+    COLD_TURKEY_EXECUTABLE,
+    passwordStopArgs(secret.blockName, secret.password),
+    { windowsHide: true, timeout: 15000 }
+  );
+}
+
+async function revealColdTurkeyPassword(status, expectedPurpose) {
   const purpose = expectedPurpose || (
     fs.existsSync(coldTurkeySessionPath("guard")) ? "guard" : "focus"
   );
   if (!fs.existsSync(coldTurkeySessionPath(purpose))) return "";
   const secret = readColdTurkeySecret(purpose);
   if (expectedPurpose && secret.purpose !== expectedPurpose) return "";
+  let autoUnlockError = "";
+  try {
+    await stopColdTurkeyBlockWithPassword(secret);
+  } catch (error) {
+    autoUnlockError = error.message;
+  }
+  if (!autoUnlockError) {
+    if (purpose === "penalty") {
+      state.coldTurkey.passwordRevealed = "";
+      state.coldTurkey.penaltyActive = false;
+      state.coldTurkey.penaltyStatus = `${status}；已自动发送解锁命令`;
+    } else {
+      state.coldTurkey = {
+        ...state.coldTurkey,
+        active: false,
+        blockName: secret.blockName,
+        passwordRevealed: "",
+        recoveryAvailable: false,
+        awaitingUnlockConfirmation: false,
+        previousPasswordAvailable: false,
+        focusEndsAt: 0,
+        status: `${status}；已自动发送解锁命令`
+      };
+      previousFocusPasswordCandidate = "";
+    }
+    clearColdTurkeySecret(purpose);
+    return secret.password;
+  }
   if (purpose === "penalty") {
     state.coldTurkey.passwordRevealed = secret.password;
     state.coldTurkey.penaltyActive = false;
-    state.coldTurkey.penaltyStatus = status;
+    state.coldTurkey.penaltyStatus = `${status}；自动解锁失败：${autoUnlockError}`;
   } else {
     state.coldTurkey = {
       ...state.coldTurkey,
@@ -606,7 +643,7 @@ function revealColdTurkeyPassword(status, expectedPurpose) {
       recoveryAvailable: false,
       awaitingUnlockConfirmation: purpose === "focus",
       focusEndsAt: 0,
-      status
+      status: `${status}；自动解锁失败：${autoUnlockError}`
     };
   }
   if (purpose === "focus") {
@@ -1013,7 +1050,7 @@ async function reconcilePenaltyLock() {
         await reassertPenaltyLock();
       }
     } else if (!inPenalty && hasPenaltySecret) {
-      const password = revealColdTurkeyPassword(
+      const password = await revealColdTurkeyPassword(
         `已恢复正常身份，${blockName} 解锁密码已公布`,
         "penalty"
       );
@@ -1047,7 +1084,7 @@ function saveEntertainmentGuard() {
   );
 }
 
-function clearEntertainmentGuard(message = "24 小时娱乐限制已结束") {
+async function clearEntertainmentGuard(message = "24 小时娱乐限制已结束") {
   clearInterval(entertainmentGuardTimer);
   entertainmentGuardTimer = null;
   state.entertainment.guard = {
@@ -1057,11 +1094,11 @@ function clearEntertainmentGuard(message = "24 小时娱乐限制已结束") {
     remainingSeconds: 0
   };
   saveEntertainmentGuard();
-  const password = revealColdTurkeyPassword(message, "guard");
+  const password = await revealColdTurkeyPassword(message, "guard");
   if (password) state.status = message;
 }
 
-function entertainmentGuardTick() {
+async function entertainmentGuardTick() {
   if (!state.entertainment.guard.active) return;
   const remainingSeconds = Math.max(
     0,
@@ -1069,7 +1106,7 @@ function entertainmentGuardTick() {
   );
   state.entertainment.guard.remainingSeconds = remainingSeconds;
   if (remainingSeconds === 0) {
-    clearEntertainmentGuard();
+    await clearEntertainmentGuard();
     if (state.entertainment.active) stopEntertainment("24 小时限制已结束，娱乐模式已停止");
   }
   broadcast();
@@ -1081,7 +1118,7 @@ async function restoreEntertainmentGuard() {
     const endsAt = Number(saved.endsAt || 0);
     const blockName = validateBlockName(saved.blockName);
     if (endsAt <= Date.now()) {
-      clearEntertainmentGuard();
+      await clearEntertainmentGuard();
       return;
     }
     state.entertainment.guard = {
@@ -1935,7 +1972,7 @@ async function monitorTick() {
   if (state.remainingSeconds === 0) {
     awardCompletedSession();
     const earned = sessionEarnedPoints;
-    revealColdTurkeyPassword("任务自然完成，可用密码停止 block", "focus");
+    await revealColdTurkeyPassword("任务自然完成，可用密码停止 block", "focus");
     stopSession(earned > 0 ? `本轮完成，本轮累计获得 ${earned} 点` : "本轮完成，专注分钟已累计入账");
     notify("本轮完成", earned > 0 ? `本轮累计获得 ${earned} 点。` : "专注分钟已累计入账。");
     return;
@@ -2030,10 +2067,10 @@ function stopSession(message = "已停止") {
   return publicState();
 }
 
-function forceStopSession(reason, message) {
+async function forceStopSession(reason, message) {
   creditElapsedFocusMinutes();
   deductForForcedExit(reason);
-  const password = revealColdTurkeyPassword(
+  const password = await revealColdTurkeyPassword(
     "已强制结束，本轮 Cold Turkey 密码已公布；解除后请确认",
     "focus"
   );
@@ -2074,7 +2111,7 @@ function createWindow() {
     });
     closePromptOpen = false;
     if (result.response === 1) {
-      forceStopSession("关闭应用时强行退出", "已强行退出，扣除 3 点；Cold Turkey 密码已公布");
+      await forceStopSession("关闭应用时强行退出", "已强行退出，扣除 3 点；Cold Turkey 密码已公布");
       allowWindowClose = true;
       mainWindow.close();
     }
@@ -2246,7 +2283,7 @@ ipcMain.handle("entertainment:start", async (_, config) => {
       if (!fs.existsSync(coldTurkeySessionPath("guard"))) {
         await relockEntertainmentGuard();
       }
-      const password = revealColdTurkeyPassword(
+      const password = await revealColdTurkeyPassword(
         `已兑换 ${durationMinutes} 分钟娱乐津贴，请用此密码暂停 block`,
         "guard"
       );
@@ -2345,7 +2382,7 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
         verdict: "completion",
         reason: `完成证据通过：${review.reason}`
       });
-      const password = revealColdTurkeyPassword("证据通过，可用密码停止 block", "focus");
+      const password = await revealColdTurkeyPassword("证据通过，可用密码停止 block", "focus");
       stopSession(earned > 0
         ? `证据通过：${review.reason}；本轮累计获得 ${earned} 点`
         : `证据通过：${review.reason}；专注分钟已累计入账`);
@@ -2363,9 +2400,9 @@ ipcMain.handle("session:stop:request", async (_, evidence) => {
     return { ...publicState(), stopReview: review };
   }
 });
-ipcMain.handle("session:stop:force", () => {
+ipcMain.handle("session:stop:force", async () => {
   if (state.running) {
-    forceStopSession("手动强行停止", "已强行停止，扣除 3 点；Cold Turkey 密码已公布");
+    await forceStopSession("手动强行停止", "已强行停止，扣除 3 点；Cold Turkey 密码已公布");
   }
   return publicState();
 });
@@ -2383,7 +2420,7 @@ ipcMain.handle("cold-turkey:recover", async () => {
   });
   if (result.response === 1) {
     deductForForcedExit("恢复 Cold Turkey 密码");
-    revealColdTurkeyPassword("已恢复密码并扣除 3 点");
+    await revealColdTurkeyPassword("已恢复密码并扣除 3 点");
     if (state.entertainment.guard.active) {
       state.entertainment.guard.active = false;
       saveEntertainmentGuard();
@@ -2562,9 +2599,9 @@ app.whenReady().then(async () => {
     status: "检测完成"
   };
   createWindow();
-  globalShortcut.register("CommandOrControl+Shift+F12", () => {
+  globalShortcut.register("CommandOrControl+Shift+F12", async () => {
     if (!state.running) return;
-    forceStopSession("紧急快捷键强行停止", "已紧急停止，扣除 3 点；Cold Turkey 密码已公布");
+    await forceStopSession("紧急快捷键强行停止", "已紧急停止，扣除 3 点；Cold Turkey 密码已公布");
     notify("已紧急停止", "本轮扣除 3 点，Cold Turkey 密码已在应用中公布。");
   });
 });

@@ -9,6 +9,7 @@ const { activityCacheKey, parseAiVerdict, sanitizeCommentary } = require("../src
 const {
   generateColdTurkeyPassword,
   parseBlockStatus,
+  passwordStopArgs,
   validateBlockName
 } = require("../src/cold-turkey");
 const { hasModel } = require("../src/ollama");
@@ -274,6 +275,14 @@ test("Cold Turkey password is CLI-safe and block names are validated", () => {
   assert.match(password, /^[A-Za-z0-9_-]{20,}$/);
   assert.equal(validateBlockName("AI Commissar"), "AI Commissar");
   assert.throws(() => validateBlockName('bad"name'));
+});
+
+test("Cold Turkey stop command passes block and password as separate args", () => {
+  assert.deepEqual(
+    passwordStopArgs("AI Commissar", "secret-value"),
+    ["-stop", "AI Commissar", "-password", "secret-value"]
+  );
+  assert.throws(() => passwordStopArgs('bad"name', "secret-value"));
 });
 
 test("completed sessions earn points by duration", () => {
